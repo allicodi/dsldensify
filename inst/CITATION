@@ -1,0 +1,12 @@
+citHeader("TODO")
+
+year <- format(Sys.Date(), "%Y")
+note <- sprintf("R package version %s", meta$Version)
+
+bibentry(bibtype = "Manual",
+         title = "{dsldensify}: Discrete Super Learner Conditional Density Estimation",
+         author = c(person("David", "Benkeser")),
+         year = year,
+         note = note,
+         doi = "TODO",
+         url = "https://github.com/benkeser/dsldensify")

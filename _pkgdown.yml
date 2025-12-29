@@ -1,0 +1,7 @@
+title: haldensify
+url: https://codex.nimahejazi.org/haldensify
+template:
+  bootstrap: 5
+  light-switch: true
+  bslib:
+    bootswatch: simplex

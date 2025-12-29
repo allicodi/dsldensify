@@ -1,0 +1,32 @@
+Package: dsldensify
+Title: Discrete Super Learner Conditional Density Estimation
+Version: 0.0.1
+Authors@R: c(
+    person("David", "Benkeser", email = "benkeser@emory.edu",
+           role = c("aut", "cre", "cph"),
+           comment = c(ORCID = "0000-0002-1019-8343"))
+  )
+Maintainer: David Benkeser <benkeser@emory.edu>
+Description: An algorithm for flexible conditional density estimation based on
+    discrete super learner using pooled hazard regression or direct density estimation.
+Depends: R (>= 3.2.0)
+Imports:
+    stats,
+    utils,
+    data.table,
+    future.apply,
+    assertthat,
+    origami (>= 1.0.7)
+Suggests:
+    testthat,
+    knitr,
+    rmarkdown,
+    covr,
+    future
+License: MIT + file LICENSE
+URL: https://github.com/benkeser/dsldensify
+BugReports: https://github.com/benkeser/dsldensify/issues
+Encoding: UTF-8
+VignetteBuilder: knitr
+RoxygenNote: 7.3.2
+RdMacros: Rdpack
