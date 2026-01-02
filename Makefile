@@ -1,5 +1,8 @@
-md:
+md: install
 	Rscript -e "rmarkdown::render('README.Rmd', output_file = 'README.md')"
+
+install:
+	Rscript -e "install.packages('.', type = 'source', repos = NULL)"
 
 site:
 	Rscript -e "rmarkdown::render('README.Rmd', output_file = 'README.md')"
