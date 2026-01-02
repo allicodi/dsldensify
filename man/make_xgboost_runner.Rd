@@ -105,6 +105,9 @@ A named list (runner) with elements:
         an \code{n_long x K} matrix of hazard predictions.}
   \item{fit_one}{Function \code{fit_one(train_set, tune, ...)} fitting only
         the selected tuning index.}
+  \item{sample}{Function \code{sample(fit_bundle, newdata, n_samp, ...)}
+        drawing samples from the implied conditional density (assumes
+        \code{length(fit_bundle$fits)==1}).}
 }
 }
 \description{
@@ -135,6 +138,9 @@ The runner expects \code{train_set} and \code{newdata} as
   \item covariates referenced in \code{rhs_list},
   \item an optional weight column \code{wts}.
 }
+
+\code{newdata} passed to \code{sample()} must additionally include
+\code{bin_lower} and \code{bin_upper}.
 
 ## Model selection
 Each row of \code{tune_grid} corresponds to a distinct fitted model, so no
@@ -187,6 +193,27 @@ Each row of \code{tune_grid} corresponds to **exactly one fitted xgboost model**
 During cross-validation, \code{predict()} returns an
 \code{n_long x K} matrix of predicted hazards, where
 \code{K = nrow(tune_grid)}, with columns aligned to \code{.tune}.
+
+Internally, \code{predict()} delegates to a local helper \code{predict_hazards()}
+to avoid duplicated scoring logic and to ensure sampling and prediction use
+the same hazard predictions.
+}
+
+\section{Sampling from the fitted hazard model}{
+
+The runner provides a \code{sample()} method that generates draws
+\eqn{A^* \sim \hat f(\cdot \mid W)} from the implied conditional density under
+the discrete-time hazard representation.
+
+Sampling assumes the \code{fit_bundle} contains **exactly one** tuned fit
+(i.e., \code{length(fit_bundle$fits) == 1}). This is the intended usage after
+model selection (e.g., after applying \code{select_fit_tune()} or fitting the
+selected tuning index via \code{fit_one()}).
+
+IMPORTANT: This runner's \code{sample()} expects \code{newdata} in **long hazard
+format**. Expansion of wide \code{W} to long (repeating rows across all bins,
+attaching \code{bin_lower}/\code{bin_upper}) is handled upstream by the
+hazard-grid orchestration utilities in \code{dsldensify}.
 }
 
 \section{Early stopping}{

@@ -19,152 +19,132 @@ make_gamlss_runner(
 )
 }
 \arguments{
-\item{mu_rhs_list}{A list of RHS specifications for the location (mean)
-parameter \code{mu}, either as one-sided formulas (e.g., \code{~ W1 + W2}) or
-character strings (e.g., \code{"W1 + W2"}). Must have length \eqn{\ge 1}.}
+\item{mu_rhs_list}{RHS specifications for the location parameter mu. May be
+one-sided formulas (for example, ~ W1 + W2) or character strings
+(for example, "W1 + W2"). Must have length at least 1.}
 
-\item{family_list}{Character vector of GAMLSS family names (e.g., \code{"NO"},
-\code{"TF"}, \code{"BCCG"}). Each family must have a corresponding density
-function \code{d<family>()} available in \pkg{gamlss.dist}.}
+\item{family_list}{Character vector of GAMLSS family names (for example, "NO",
+"TF", "BCCG"). Each family must have corresponding d<family>() and r<family>()
+functions available in gamlss.dist.}
 
-\item{sigma_rhs_list}{RHS specifications for the scale parameter \code{sigma}.
-Defaults to \code{"1"} (constant scale). May be formulas or character strings.}
+\item{sigma_rhs_list}{RHS specifications for the scale parameter sigma.
+Defaults to "1". May be formulas or character strings.}
 
-\item{nu_rhs_list}{Optional RHS specifications for the \code{nu} parameter
-(e.g., skewness). If \code{NULL}, \code{nu} is not modeled.}
+\item{nu_rhs_list}{Optional RHS specifications for the nu parameter. If NULL,
+nu is not modeled.}
 
-\item{tau_rhs_list}{Optional RHS specifications for the \code{tau} parameter
-(e.g., kurtosis). If \code{NULL}, \code{tau} is not modeled.}
+\item{tau_rhs_list}{Optional RHS specifications for the tau parameter. If NULL,
+tau is not modeled.}
 
-\item{use_weights_col}{Logical. If \code{TRUE} and the training data contain a
-column named \code{wts}, it is passed to \code{gamlss::gamlss()} via the
-\code{weights} argument. Otherwise, fitting is unweighted.}
+\item{use_weights_col}{Logical. If TRUE and the training data contain a column
+named wts, it is passed to gamlss::gamlss() via weights. Otherwise, fitting
+is unweighted.}
 
-\item{strip_fit}{Logical. If \code{TRUE} (default), apply a stripping step to
-fitted GAMLSS or fallback models before storing them.}
+\item{strip_fit}{Logical. If TRUE, strip fitted gamlss or fallback models
+before storing them.}
 
-\item{control}{A \code{gamlss.control()} object controlling the GAMLSS fitting
-procedure (e.g., number of iterations, tracing). Defaults to a conservative,
-quiet configuration suitable for CV.}
+\item{control}{A gamlss.control() object controlling the fitting procedure.}
 
 \item{eps}{Small positive constant used to bound log-densities away from
-\eqn{-\infty} when fits fail or densities underflow.}
+-Inf when fits fail or densities underflow.}
 
-\item{fallback}{Character string specifying fallback behavior when a GAMLSS
-fit fails. One of:
-\describe{
-  \item{\code{"normal_lm"}}{Fall back to a homoscedastic normal linear model
-  for \code{mu}.}
-  \item{\code{"none"}}{Do not fall back; failed fits return log(eps).}
-}}
+\item{fallback}{Character string specifying fallback behavior when a GAMLSS fit
+fails. One of "normal_lm" or "none".}
 
-\item{...}{Additional arguments forwarded to \code{gamlss::gamlss()}.}
+\item{...}{Additional arguments forwarded to gamlss::gamlss().}
 }
 \value{
 A named list (runner) with elements:
-\describe{
-  \item{method}{Character string \code{"gamlss"}.}
-  \item{tune_grid}{Data frame enumerating all family / RHS combinations, with
-  column \code{.tune}.}
-  \item{fit}{Function \code{fit(train_set, ...)} returning a fit bundle
-  containing all fitted (or failed/fallback) models.}
-  \item{log_density}{Function \code{log_density(fit_bundle, newdata, ...)}
-  returning an \code{n x K} matrix of log-densities.}
-  \item{density}{Function \code{density(fit_bundle, newdata, ...)} returning
-  densities on the original scale.}
-  \item{fit_one}{Function \code{fit_one(train_set, tune, ...)} fitting only
-  the selected tuning index.}
-  \item{select_fit}{Function for extracting a single tuning from a fit bundle.}
-}
+  method: Character string "gamlss".
+  tune_grid: Data frame enumerating all family / RHS combinations, including .tune.
+  fit: Function fit(train_set, ...) returning a fit bundle containing all fits.
+  log_density: Function log_density(fit_bundle, newdata, ...) returning an n x K
+    matrix of log-densities.
+  density: Function density(fit_bundle, newdata, ...) returning densities on
+    the original scale.
+  fit_one: Function fit_one(train_set, tune, ...) fitting only the selected tuning index.
+  select_fit: Function select_fit(fit_bundle, tune) extracting a single tuning configuration.
+  sample: Function sample(fit_bundle, newdata, n_samp, ...) drawing samples from the
+    fitted conditional density (assumes length(fit_bundle$fits) == 1).
+
+Data requirements
+
+The runner expects train_set and newdata in wide format containing:
+  - a numeric outcome column A,
+  - covariates referenced in the RHS specifications,
+  - an optional weight column wts.
 }
 \description{
-Constructs a **runner** (learner adapter) compatible with the
-\code{dsldensify()} / \code{summarize_and_select()} workflow for **direct
-conditional density estimation** of a continuous outcome \code{A | W} using
-generalized additive models for location, scale, and shape (GAMLSS).
-
-The runner fits one or more GAMLSS models via \code{gamlss::gamlss()}, allowing
-flexible specification of regression formulas for distribution parameters
-(e.g., mean, scale, skewness, kurtosis) and supports tuning over:
-\itemize{
-  \item distribution family,
-  \item mean model (\code{mu_rhs}),
-  \item scale model (\code{sigma_rhs}),
-  \item optional shape models (\code{nu_rhs}, \code{tau_rhs}).
-}
-
-This runner is intended for **direct density learners** (not hazard-based):
-it returns log-densities \eqn{\log f(A | W)} directly, which are used for
-cross-validated model selection on the negative log-likelihood scale.
+Constructs a runner (learner adapter) compatible with the
+dsldensify() / summarize_and_select() workflow for direct conditional density
+estimation of a continuous outcome A given covariates W using GAMLSS.
 }
 \details{
-## Data requirements
-The runner expects \code{train_set} and \code{newdata} in **wide format**
-containing:
-\itemize{
-  \item a numeric outcome column \code{A},
-  \item covariates referenced in the RHS specifications,
-  \item an optional weight column \code{wts}.
-}
+The runner fits one or more GAMLSS models via gamlss::gamlss(), allowing
+specification of regression formulas for distribution parameters (mu, sigma,
+and optionally nu and tau) and supports tuning over:
+  - distribution family,
+  - mu model (mu_rhs_list),
+  - sigma model (sigma_rhs_list),
+  - optional nu model (nu_rhs_list),
+  - optional tau model (tau_rhs_list).
 
-## Density evaluation
+This is a direct density learner. log_density() evaluates log f(A | W)
+directly and is used for cross-validated model selection on the negative
+log-likelihood scale.
+
+Robustness and fallback behavior
+
+GAMLSS fits can fail to converge or error for certain combinations of
+families and formulas. This runner supports fallback behavior:
+  - fallback = "normal_lm": if a GAMLSS fit fails, fall back to a homoscedastic
+    normal linear model for the mean with an empirical residual standard
+    deviation.
+  - fallback = "none": retain the failure and return finite log-densities
+    bounded below by log(eps). Error objects are stored for debugging.
+
+Numeric-only requirement
+
+This runner assumes all covariates referenced in the RHS formulas are
+numeric. Factor handling and categorical smooth terms are not supported.
+
+Tuning grid and prediction layout
+
+The internal tune_grid is the Cartesian product of family_list, mu_rhs_list,
+sigma_rhs_list, and optionally nu_rhs_list and tau_rhs_list. Each row
+corresponds to a distinct specification. During cross-validation,
+log_density() returns an n x K matrix of log-densities, where K = nrow(tune_grid),
+aligned to .tune.
+
+Sampling from the fitted direct density model
+
+The runner provides a sample() method that generates draws
+  A* ~ f_hat(· | W)
+from the fitted conditional density.
+
+Sampling assumes the fit_bundle contains exactly one tuned fit
+(length(fit_bundle$fits) == 1). This is the intended usage after model
+selection (for example, after applying select_fit_tune() or fitting the
+selected tuning index via fit_one()).
+
+The sample() method expects newdata in wide format containing only covariates W.
+It returns an nrow(newdata) x n_samp numeric matrix.
+
 For GAMLSS fits, distribution parameters are obtained via
-\code{predictAll(type = "response")}, and the log-density is evaluated using
-the corresponding \code{d<family>()} function from \pkg{gamlss.dist}. For
-fallback normal models, densities are computed using \code{dnorm()}.
-}
-\section{Robustness and fallback behavior}{
+predictAll(type = "response") and sampling is performed using the
+corresponding r<family>() function from gamlss.dist. For fallback normal
+models, sampling uses rnorm() with mean predicted by the linear model and
+constant sigma estimated on the training set.
 
-GAMLSS fits can occasionally fail to converge or error for certain combinations
-of families and formulas, especially in small samples or during cross-validation.
-To make large CV routines robust, this runner supports an optional **fallback
-mechanism**:
-\itemize{
-  \item \code{fallback = "normal_lm"}: if a GAMLSS fit fails, fall back to a
-        homoscedastic normal linear model for the mean with an empirical
-        residual standard deviation.
-  \item \code{fallback = "none"}: retain the failure and return a finite but
-        extremely small log-density (via \code{eps}); error objects are stored
-        for debugging.
-}
-}
+Lightweight fit objects
 
-\section{Numeric-only requirement}{
-
-This runner assumes that all covariates referenced in the RHS formulas are
-**numeric**. Factor handling, contrasts, and categorical smoothing terms are
-not supported. Inputs are assumed to be preprocessed appropriately.
+When strip_fit = TRUE, fitted gamlss objects are stripped of large components
+(responses, fitted values, residuals) before storage. This reduces memory usage
+while preserving the ability to predict distribution parameters and evaluate
+densities and samples.
 }
-
-\section{Tuning grid and prediction layout}{
-
-The internal \code{tune_grid} is the Cartesian product of:
-\itemize{
-  \item \code{family_list},
-  \item \code{mu_rhs_list},
-  \item \code{sigma_rhs_list},
-  \item \code{nu_rhs_list} (if provided),
-  \item \code{tau_rhs_list} (if provided).
-}
-Each row corresponds to a distinct GAMLSS specification. During
-cross-validation, \code{log_density()} returns an \code{n x K} matrix of
-log-densities, where \code{K = nrow(tune_grid)}, aligned to the tuning grid.
-}
-
-\section{Lightweight fit objects}{
-
-When \code{strip_fit = TRUE}, fitted \code{gamlss} objects are stripped of
-large components (responses, fitted values, residuals) before storage.
-This substantially reduces memory usage when saving fold-specific CV fits,
-while preserving the ability to:
-\itemize{
-  \item predict distribution parameters via \code{predictAll()},
-  \item evaluate the log-density via the appropriate \code{d<family>()} function.
-}
-}
-
 \examples{
-mu_rhs <- list(~ W1 + W2, ~ splines::ns(W1, df = 3) + W2)
+mu_rhs <- list(~ W1 + W2, ~ W1 + W2 + W3)
 
 runner <- make_gamlss_runner(
   mu_rhs_list = mu_rhs,

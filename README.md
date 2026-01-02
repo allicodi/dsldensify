@@ -177,7 +177,10 @@ We can also sanity check the fit by comparing the marginal density
 estimate implied by the conditional model to a simple histogram.
 
 ``` r
-hist(A, freq = FALSE, breaks = 30, col = "gray", border = "white")
+hist(
+  A, freq = FALSE, breaks = 30, col = "gray", border = "white",
+  main = "Marginal distribution of A"
+)
 plot(fit, W_grid, mode = "marginal", add = TRUE, plot_args = list(lwd = 2))
 ```
 
@@ -201,6 +204,46 @@ head(dens)
 
 Cross-validated prediction is also supported (e.g., for DML/TMLE
 workflows); see the function documentation for details.
+
+------------------------------------------------------------------------
+
+## Sampling from the fitted conditional density
+
+In addition to evaluating densities, `dsldensify` can generate draws
+from the fitted conditional distribution $\hat f(\cdot \mid W)$.
+
+``` r
+# draw 5 samples of A for each row of W_grid
+A_samp <- rsample(fit, W = W_grid, n_samp = 5, type = "full", seed = 123)
+
+A_samp
+#>            [,1]      [,2]       [,3]       [,4]       [,5]
+#> [1,] -0.6401785 1.6157852 0.09410472  0.4471377 -0.7747125
+#> [2,]  0.4893415 0.8094347 2.56013685 -0.6123373  0.2599489
+```
+
+A quick sanity check is to compare the sampled values to the fitted
+conditional density curve at the same covariate profile.
+
+``` r
+# overlay samples on the fitted conditional density for W_new = (0, 0)
+W_new <- data.table(x1 = 0, x2 = 0)
+A_samp0 <- rsample(fit, W = W_new, n_samp = 2000, type = "full", seed = 1)
+
+hist(
+  A_samp0[1, ], freq = FALSE, breaks = 30, col = "gray", border = "white",
+  main = "Samples from estimated density + fitted density curve"
+)
+
+plot(
+  fit, W_new, mode = "conditional", add = TRUE, plot_args = list(lwd = 2)
+)
+```
+
+<img src="README-example-sample-1.png" width="80%" />
+
+Cross-validated sampling is also supported; see the function
+documentation for details.
 
 ------------------------------------------------------------------------
 

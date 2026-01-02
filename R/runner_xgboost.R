@@ -59,6 +59,25 @@
 #' \code{n_long x K} matrix of predicted hazards, where
 #' \code{K = nrow(tune_grid)}, with columns aligned to \code{.tune}.
 #'
+#' Internally, \code{predict()} delegates to a local helper \code{predict_hazards()}
+#' to avoid duplicated scoring logic and to ensure sampling and prediction use
+#' the same hazard predictions.
+#'
+#' @section Sampling from the fitted hazard model:
+#' The runner provides a \code{sample()} method that generates draws
+#' \eqn{A^* \sim \hat f(\cdot \mid W)} from the implied conditional density under
+#' the discrete-time hazard representation.
+#'
+#' Sampling assumes the \code{fit_bundle} contains **exactly one** tuned fit
+#' (i.e., \code{length(fit_bundle$fits) == 1}). This is the intended usage after
+#' model selection (e.g., after applying \code{select_fit_tune()} or fitting the
+#' selected tuning index via \code{fit_one()}).
+#'
+#' IMPORTANT: This runner's \code{sample()} expects \code{newdata} in **long hazard
+#' format**. Expansion of wide \code{W} to long (repeating rows across all bins,
+#' attaching \code{bin_lower}/\code{bin_upper}) is handled upstream by the
+#' hazard-grid orchestration utilities in \code{dsldensify}.
+#'
 #' @section Early stopping:
 #' If \code{early_stopping_rounds} is not \code{NULL}, each model is trained with
 #' early stopping using an internal validation split drawn from the training data.
@@ -154,6 +173,9 @@
 #'         an \code{n_long x K} matrix of hazard predictions.}
 #'   \item{fit_one}{Function \code{fit_one(train_set, tune, ...)} fitting only
 #'         the selected tuning index.}
+#'   \item{sample}{Function \code{sample(fit_bundle, newdata, n_samp, ...)}
+#'         drawing samples from the implied conditional density (assumes
+#'         \code{length(fit_bundle$fits)==1}).}
 #' }
 #'
 #' @details
@@ -167,6 +189,9 @@
 #'   \item covariates referenced in \code{rhs_list},
 #'   \item an optional weight column \code{wts}.
 #' }
+#'
+#' \code{newdata} passed to \code{sample()} must additionally include
+#' \code{bin_lower} and \code{bin_upper}.
 #'
 #' ## Model selection
 #' Each row of \code{tune_grid} corresponds to a distinct fitted model, so no
@@ -187,7 +212,6 @@
 #' )
 #'
 #' @export
-
 make_xgboost_runner <- function(
   rhs_list,
   max_depth_grid = c(2L, 4L),
@@ -395,6 +419,33 @@ make_xgboost_runner <- function(
     }
   }
 
+  # ---- shared scoring helper (used by predict() and sample()) ----
+  predict_hazards <- function(fits, newdata, ...) {
+    if (!data.table::is.data.table(newdata)) stop("newdata must be a data.table.")
+    if (is.null(fits) || !length(fits)) stop("fit_bundle does not contain fits.")
+
+    n <- nrow(newdata)
+    out <- matrix(NA_real_, nrow = n, ncol = length(fits))
+
+    for (k in seq_along(fits)) {
+      cols <- fits[[k]]$cols
+      X <- make_X(newdata, cols)
+      dnew <- xgboost::xgb.DMatrix(data = X)
+
+      if (is.na(fits[[k]]$best_iter)) {
+        # stripped by refit => full model is already best_iter length
+        p <- predict(fits[[k]]$model, dnew)
+      } else {
+        it <- as.integer(fits[[k]]$best_iter)
+        p <- predict(fits[[k]]$model, dnew, iterationrange = c(1L, it))
+      }
+
+      out[, k] <- clip01(p)
+    }
+
+    out
+  }
+
   list(
     method = "xgboost",
     tune_grid = tune_grid,
@@ -465,29 +516,98 @@ make_xgboost_runner <- function(
       list(fits = fits)
     },
 
+    # NOTE: newdata is LONG hazard data (expanded upstream from wide W):
+    # dsldensify's hazard-grid utilities handle repeating W across bins and
+    # attaching bin metadata (bin_id, bin_lower, bin_upper, etc.).
     predict = function(fit_bundle, newdata, ...) {
+      predict_hazards(fits = fit_bundle$fits, newdata = newdata, ...)
+    },
+
+    # NOTE: newdata is LONG hazard data (expanded upstream from wide W):
+    # sampling requires hazards across all bins per subject, so the wide->long
+    # expansion (and bin endpoint attachment) is handled upstream. This method
+    # assumes fit_bundle contains exactly one selected fit (K = 1).
+    sample = function(fit_bundle, newdata, n_samp, seed = NULL, ...) {
       if (!data.table::is.data.table(newdata)) stop("newdata must be a data.table.")
+      if (length(n_samp) != 1L || is.na(n_samp) || n_samp < 1L) stop("n_samp must be a positive integer.")
+      n_samp <- as.integer(n_samp)
 
       fits <- fit_bundle$fits
       if (is.null(fits) || !length(fits)) stop("fit_bundle does not contain fits.")
+      if (length(fits) != 1L) stop("sample() assumes K=1: fit_bundle$fits must have length 1 (selected model).")
 
-      n <- nrow(newdata)
-      out <- matrix(NA_real_, nrow = n, ncol = length(fits))
+      if (!("bin_lower" %in% names(newdata)) || !("bin_upper" %in% names(newdata))) {
+        stop("newdata must contain 'bin_lower' and 'bin_upper' columns for sampling.")
+      }
+      if (!(id_col %in% names(newdata))) {
+        stop("newdata must contain id_col='", id_col, "' for sampling.")
+      }
+      if (!(bin_var %in% names(newdata))) {
+        stop("newdata must contain bin_var='", bin_var, "' for sampling.")
+      }
 
-      for (k in seq_along(fits)) {
-        cols <- fits[[k]]$cols
-        X <- make_X(newdata, cols)
-        dnew <- xgboost::xgb.DMatrix(data = X)
+      if (!is.null(seed)) set.seed(seed)
 
-        if (is.na(fits[[k]]$best_iter)) {
-          # stripped by refit => full model is already best_iter length
-          p <- predict(fits[[k]]$model, dnew)
-        } else {
-          it <- as.integer(fits[[k]]$best_iter)
-          p <- predict(fits[[k]]$model, dnew, iterationrange = c(1L, it))
+      # Predict hazards (n_long x 1). Hazards must be ordered consistently with dt.
+      haz <- predict_hazards(fits = fits, newdata = newdata, ...)
+      haz <- as.numeric(haz[, 1])
+
+      dt <- data.table::as.data.table(newdata)
+      dt[, .row_id__ := .I]
+      data.table::setorderv(dt, c(id_col, bin_var))
+      haz <- haz[dt$.row_id__]  # reorder hazards to match dt after sorting
+
+      # per-subject row indices (already in bin order after setorderv)
+      rows_by_id <- split(seq_len(nrow(dt)), dt[[id_col]])
+      ids <- names(rows_by_id)
+
+      out <- matrix(NA_real_, nrow = length(ids), ncol = n_samp)
+      rownames(out) <- ids
+      warned_zero_mass <- FALSE
+
+      for (ii in seq_along(ids)) {
+        rr <- rows_by_id[[ii]]
+        m <- length(rr)
+        if (m < 1L) next
+
+        h <- clip01(haz[rr])
+
+        lower <- dt$bin_lower[rr]
+        upper <- dt$bin_upper[rr]
+        if (any(!is.finite(lower)) || any(!is.finite(upper)) || any(upper <= lower)) {
+          stop("Invalid bin_lower/bin_upper for id='", ids[[ii]], "'.")
         }
 
-        out[, k] <- clip01(p)
+        # masses p_j = h_j * prod_{l<j}(1 - h_l)
+        if (m == 1L) {
+          mass <- h
+        } else {
+          s_prev <- c(1, cumprod(1 - h)[-m])
+          mass <- h * s_prev
+        }
+
+        tot <- sum(mass)
+        if (!is.finite(tot) || tot <= 0) {
+
+          if (!warned_zero_mass) {
+            warning(
+              "Hazard-based sampling encountered zero or non-finite total mass for at least one observation.\n",
+              "Falling back to uniform sampling over bins for those cases.\n",
+              "This can occur if predicted hazards are numerically near zero across all bins\n",
+              "or if survival past the grid has probability ~1."
+            )
+            warned_zero_mass <- TRUE
+          }
+
+          # fallback: uniform over bins
+          j <- sample.int(m, size = n_samp, replace = TRUE)
+
+        } else {
+          pmf <- mass / tot
+          j <- sample.int(m, size = n_samp, replace = TRUE, prob = pmf)
+        }
+
+        out[ii, ] <- stats::runif(n_samp, min = lower[j], max = upper[j])
       }
 
       out

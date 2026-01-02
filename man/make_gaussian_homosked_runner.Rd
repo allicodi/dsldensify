@@ -33,6 +33,7 @@ A runner (named list) with elements:
   \item{fit}{Function \code{fit(train_set, ...)} returning \code{list(fits=...)}.}
   \item{log_density}{Function returning an \code{n x K} matrix of log densities.}
   \item{density}{Function returning an \code{n x K} matrix of densities.}
+  \item{sample}{Function drawing samples \code{A*} given \code{W} (assumes \code{K=1}).}
   \item{fit_one}{Fit only the selected tune (returns minimal bundle).}
 }
 }
@@ -43,6 +44,11 @@ across observations. The conditional mean \eqn{\mu(W)} is fit via
 weighted least squares using \code{stats::lm()} with one model per RHS in
 \code{rhs_list}. The runner exposes \code{log_density()} (and optionally
 \code{density()}) for use in \code{run_direct_setting()} and global selection.
+
+The runner also provides \code{sample()} to draw
+\eqn{A^* \sim \hat f(\cdot \mid W)} from the fitted conditional normal model.
+Sampling is intended to be called on a **selected** fit (i.e.,
+\code{length(fit_bundle$fits) == 1}).
 }
 \section{Numeric-only requirement}{
 

@@ -1,106 +1,131 @@
-#' Create a GLM runner for discrete-time hazard modeling (with frozen spline bases)
+#' Create a GLM runner for discrete-time hazard modeling with frozen spline bases
 #'
-#' @description
-#' Constructs a **runner** (learner adapter) compatible with the
-#' \code{run_grid_setting()} / \code{summarize_and_select()} workflow used in
-#' dsl_densify. The runner fits one or more logistic regression models via
-#' \code{stats::glm.fit()} on long-format discrete-time hazard data with binary
-#' outcome \code{in_bin}. Tuning is performed over a list of RHS model
-#' specifications (\code{rhs_list}); one model is fit per RHS.
+#' Constructs a runner (learner adapter) compatible with the
+#' run_grid_setting() / summarize_and_select() workflow used in dsl_densify.
+#' The runner fits one or more logistic regression models via stats::glm.fit()
+#' on long-format discrete-time hazard data with binary outcome in_bin.
 #'
-#' This GLM runner supports natural spline terms specified directly in the RHS
-#' using \code{ns()} or \code{splines::ns()}, under a restricted but reproducible
-#' spline policy that avoids storing large formula environments:
-#' \itemize{
-#'   \item Only \code{ns(<symbol>, df = ...)} is supported (the first argument must
-#'         be a bare variable name).
-#'   \item \code{splines::ns()} is accepted but internally rewritten to \code{ns()}.
-#'   \item Knot locations are computed on the training data and then frozen for
-#'         prediction by evaluating \code{model.matrix()} in an environment where
-#'         \code{ns()} is replaced by a wrapper that injects stored knots and
-#'         boundary knots. This ensures consistent spline bases within each
-#'         fold and between training and validation data.
-#' }
+#' Tuning is performed over a list of RHS model specifications (rhs_list);
+#' exactly one model is fit per RHS. Each fitted model estimates per-bin
+#' discrete-time hazards
+#'   P(T in bin_j | T >= bin_j, W)
+#' using a logistic likelihood, which is equivalent to maximizing the
+#' discrete-time hazard likelihood under the long-data construction used
+#' by dsl_densify.
 #'
-#' @section Numeric-only requirement:
-#' The design matrix is constructed using \code{stats::model.matrix()}.
-#' To ensure stable feature definitions across folds and avoid factor-level
-#' bookkeeping, this runner is intended for use with **numeric predictors only**
-#' (including \code{bin_id} and all covariates in \code{W}). RHS formulas should
-#' not include factors, characters, or ordered factors. This function does not
-#' coerce variables to numeric; it assumes inputs are already in numeric form.
+#' This runner closely mirrors the conventions of the xgboost hazard runner:
+#' prediction and sampling share a common hazard-scoring path, sampling
+#' assumes post-selection fits (K = 1), and sampling operates exclusively
+#' on long hazard data constructed upstream.
 #'
-#' @section Tuning and prediction layout:
-#' The runner creates a \code{tune_grid} with one row per RHS, with columns
-#' \code{.tune} and \code{rhs}. During cross-validation, \code{predict()} returns
-#' an \code{n_long x K} matrix of predicted hazards, where \code{K = length(rhs_list)}.
-#' Columns are aligned to the runner's \code{tune_grid} ordering.
+#' Spline handling
 #'
-#' @section Lightweight fit objects:
-#' When \code{strip_fit = TRUE}, each fitted GLM is reduced to a minimal
-#' representation sufficient for prediction:
-#' \itemize{
-#'   \item a numeric coefficient vector aligned to the frozen design columns
-#'         \code{x_cols},
-#'   \item the inverse link function \code{linkinv} for mapping linear predictors
-#'         to hazard probabilities,
-#'   \item the training column names \code{x_cols}.
-#' }
-#' This can substantially reduce memory usage when storing fold-specific CV fits.
+#' Natural spline terms may be specified directly in the RHS using ns() or
+#' splines::ns(), subject to the following restrictions:
+#'   - Only ns(<symbol>, df = ...) is supported; the first argument must be
+#'     a bare variable name.
+#'   - splines::ns() is accepted but internally rewritten to ns().
+#'   - Knot locations and boundary knots are computed once on the training
+#'     data within each fold and then frozen.
 #'
-#' @param rhs_list A list of RHS specifications, either:
-#' \itemize{
-#'   \item one-sided formulas such as \code{~ W1 + ns(bin_id, df = 5)}, or
-#'   \item character strings such as \code{"W1 + splines::ns(bin_id, df = 5)"}.
-#' }
-#' These RHS are used to construct \code{in_bin ~ <rhs>} internally.
+#' Frozen spline bases are enforced at prediction and sampling time by
+#' evaluating model.matrix() in an environment where ns() is replaced by a
+#' wrapper that injects the stored knot information. This guarantees
+#' consistency of spline bases within each fold and between training,
+#' validation, and sampling.
 #'
-#' @param use_weights_col Logical. If \code{TRUE} and the training data contain a
-#' column named \code{wts}, it is passed as \code{weights = ...} to
-#' \code{stats::glm.fit()}. Otherwise, fitting is unweighted.
+#' Numeric-only requirement
 #'
-#' @param strip_fit Logical. If \code{TRUE} (default), store a lightweight fit
-#' representation (coefficients + link inverse only) rather than a full \code{glm}
-#' object. If \code{FALSE}, models are fit and stored as full \code{glm} objects.
+#' This runner is intended for use with numeric predictors only. All variables
+#' referenced in rhs_list (including bin_id and all covariates in W) must
+#' already be numeric. Factors, characters, and ordered factors are not
+#' supported and are not coerced internally.
 #'
-#' @param ... Additional arguments forwarded to \code{stats::glm.fit()} when
-#' \code{strip_fit = TRUE}, and to \code{stats::glm()} when \code{strip_fit = FALSE}.
+#' Tuning grid and prediction layout
 #'
-#' @return A named list (runner) with elements:
-#' \describe{
-#'   \item{method}{Character string \code{"glm"}.}
-#'   \item{tune_grid}{Data frame with columns \code{.tune} and \code{rhs}.}
-#'   \item{fit}{Function \code{fit(train_set, ...)} returning a fit bundle. The
-#'   fit bundle contains \code{fits}, a list of length \code{K} of fitted models
-#'   (stripped or full), and \code{design_specs} that freeze spline knots/columns
-#'   for each RHS.}
-#'   \item{predict}{Function \code{predict(fit_bundle, newdata, ...)} returning an
-#'   \code{n_long x K} matrix of hazard predictions.}
-#'   \item{fit_one}{Function \code{fit_one(train_set, tune, ...)} fitting only the
-#'   selected tuning index and returning a minimal fit bundle compatible with
-#'   \code{predict()}.}
-#' }
+#' The runner constructs a tune_grid with one row per RHS specification and
+#' columns .tune and rhs. During cross-validation, predict() returns an
+#' n_long x K matrix of predicted hazards, where K = length(rhs_list), with
+#' columns aligned to the ordering of tune_grid.
 #'
-#' @details
-#' ## Data requirements
-#' The runner expects \code{train_set} and \code{newdata} in the **long hazard
-#' format** produced by \code{format_long_hazards()}, including:
-#' \itemize{
-#'   \item a binary outcome column \code{in_bin},
-#'   \item covariates referenced in \code{rhs_list},
-#'   \item an optional \code{wts} column of observation weights (repeated on long rows).
-#' }
+#' Prediction delegates to an internal predict_hazards() helper so that
+#' prediction and sampling always use identical hazard estimates.
 #'
-#' ## Spline handling
-#' Spline knots (and boundary knots) are computed once per fold (inside \code{fit()})
-#' using the training data and stored in \code{design_specs}. Prediction uses the
-#' stored spline specifications to ensure consistent spline bases across training
-#' and validation data within each fold.
+#' Sampling from the fitted hazard model
 #'
-#' ## Interactions
-#' Interactions between spline terms and other covariates (for example,
-#' \code{W1 * ns(bin_id, df = 5)}) are supported and handled via
-#' \code{model.matrix()}. Nested spline constructs are not supported.
+#' The runner provides a sample() method that generates draws
+#'   A* ~ f_hat(· | W)
+#' from the implied conditional density under the discrete-time hazard
+#' representation.
+#'
+#' Sampling assumes the fit_bundle contains exactly one fitted model
+#' (length(fit_bundle$fits) == 1). This is the intended usage after model
+#' selection, for example via select_fit_tune() or fit_one().
+#'
+#' IMPORTANT: The sample() method expects newdata in long hazard format.
+#' Expansion of wide W to long form (repeating rows across all bins and
+#' attaching bin_lower and bin_upper) is handled upstream by
+#' sample.dsldensify(). The runner itself never constructs hazard grids.
+#'
+#' For each subject, sampling proceeds by:
+#'   - predicting hazards h_j for all bins,
+#'   - computing implied bin masses
+#'       p_j = h_j * prod_{l < j} (1 - h_l),
+#'   - normalizing the masses to sum to one,
+#'   - sampling a bin index according to p_j,
+#'   - sampling uniformly within the selected bin.
+#'
+#' If the total mass is non-finite or non-positive for any subject, a single
+#' warning is issued and sampling for those subjects falls back to uniform
+#' sampling over bins.
+#'
+#' Lightweight fit objects
+#'
+#' When strip_fit = TRUE, each fitted model is reduced to a minimal
+#' representation sufficient for prediction and sampling:
+#'   - a numeric coefficient vector aligned to frozen design columns,
+#'   - the inverse link function (linkinv),
+#'   - the training column names.
+#'
+#' When strip_fit = FALSE, full glm objects are stored; however, prediction
+#' and sampling still use frozen design matrices and extracted coefficients
+#' to preserve spline consistency.
+#'
+#' @param rhs_list A list of RHS specifications, either as one-sided formulas
+#'   (for example, ~ W1 + ns(bin_id, df = 5)) or as character strings
+#'   (for example, "W1 + splines::ns(bin_id, df = 5)").
+#'
+#' @param use_weights_col Logical. If TRUE and the training data contain a
+#'   column named wts, it is passed as case weights to stats::glm.fit().
+#'
+#' @param strip_fit Logical. If TRUE (default), store a lightweight
+#'   coefficient-based representation of each fitted model. If FALSE, store
+#'   full glm objects.
+#'
+#' @param ... Additional arguments forwarded to stats::glm.fit() when
+#'   strip_fit = TRUE and to stats::glm() when strip_fit = FALSE.
+#'
+#' @return A named list (runner) with the following elements:
+#'   method: Character string "glm".
+#'   tune_grid: Data frame describing the tuning grid, including .tune and rhs.
+#'   fit: Function fit(train_set, ...) returning a fit bundle.
+#'   predict: Function predict(fit_bundle, newdata, ...) returning an
+#'     n_long x K matrix of predicted hazards.
+#'   fit_one: Function fit_one(train_set, tune, ...) fitting only the selected
+#'     tuning index.
+#'   sample: Function sample(fit_bundle, newdata, n_samp, ...) drawing samples
+#'     from the implied conditional density (assumes K = 1).
+#'
+#' Data requirements
+#'
+#' The runner expects train_set and newdata in long hazard format, including:
+#'   - a binary outcome column in_bin,
+#'   - a time-bin column bin_id,
+#'   - a subject identifier column obs_id,
+#'   - covariates referenced in rhs_list,
+#'   - an optional weight column wts.
+#'
+#' newdata passed to sample() must additionally include bin_lower and bin_upper.
 #'
 #' @examples
 #' rhs_list <- list(
@@ -123,6 +148,7 @@ make_glm_runner <- function(
   ...
 ) {
   stopifnot(requireNamespace("splines", quietly = TRUE))
+  stopifnot(requireNamespace("data.table", quietly = TRUE))
 
   # Accept RHS formulas (~ ...) or RHS strings
   if (is.list(rhs_list) && all(vapply(rhs_list, inherits, logical(1), "formula"))) {
@@ -138,7 +164,13 @@ make_glm_runner <- function(
     stringsAsFactors = FALSE
   )
 
-  # --- helpers (copied/adapted from glmnet runner) -------------------------
+  # ---- hazard conventions (match dsldensify + xgboost runner) -------------
+  id_col <- "obs_id"
+  bin_var <- "bin_id"
+  eps <- 1e-15
+  clip01 <- function(p) pmin(pmax(p, eps), 1 - eps)
+
+  # --- helpers (spline freezing) ------------------------------------------
 
   normalize_rhs <- function(rhs) gsub("splines::ns", "ns", rhs, fixed = TRUE)
 
@@ -256,11 +288,12 @@ make_glm_runner <- function(
     Xn
   }
 
+  # --- fit storage + prediction helpers -----------------------------------
+
   strip_glm_coef <- function(glm_fit, x_cols) {
     coefs <- stats::coef(glm_fit)
     coefs[is.na(coefs)] <- 0
 
-    # ensure all columns present (pad with zeros)
     miss <- setdiff(x_cols, names(coefs))
     if (length(miss)) {
       coefs <- c(coefs, stats::setNames(rep(0, length(miss)), miss))
@@ -269,7 +302,6 @@ make_glm_runner <- function(
 
     out <- list(
       coefficients = coefs,
-      # store linkinv for response-scale hazards
       linkinv = glm_fit$family$linkinv,
       x_cols = x_cols
     )
@@ -277,9 +309,62 @@ make_glm_runner <- function(
     out
   }
 
-  predict_glm_stripped <- function(obj, Xnew) {
-    eta <- as.numeric(Xnew %*% obj$coefficients)
-    as.numeric(obj$linkinv(eta))
+  coef_from_glm <- function(glm_obj, x_cols) {
+    coefs <- stats::coef(glm_obj)
+    coefs[is.na(coefs)] <- 0
+
+    miss <- setdiff(x_cols, names(coefs))
+    if (length(miss)) {
+      coefs <- c(coefs, stats::setNames(rep(0, length(miss)), miss))
+    }
+    coefs[x_cols]
+  }
+
+  predict_from_coef <- function(coefs, linkinv, Xnew) {
+    eta <- as.numeric(Xnew %*% coefs)
+    as.numeric(linkinv(eta))
+  }
+
+  # predict hazards for K fits (like xgboost::predict_hazards)
+  predict_hazards <- function(fit_bundle, newdata, ...) {
+    if (!data.table::is.data.table(newdata)) stop("newdata must be a data.table.")
+    fits <- fit_bundle$fits
+    if (is.null(fits) || !length(fits)) stop("fit_bundle does not contain fits.")
+
+    n <- nrow(newdata)
+    out <- matrix(NA_real_, nrow = n, ncol = length(fits))
+
+    # resolve RHS keys for each fit (prefer tune indices if present)
+    rhs_keys <- NULL
+    if (!is.null(fit_bundle$tune) && length(fit_bundle$tune) == length(fits)) {
+      rhs_keys <- tune_grid$rhs[as.integer(fit_bundle$tune)]
+    } else if (!is.null(fit_bundle$rhs_chr) && length(fit_bundle$rhs_chr) == length(fits)) {
+      rhs_keys <- fit_bundle$rhs_chr
+    } else {
+      # fallback: assume ordering matches tune_grid
+      rhs_keys <- tune_grid$rhs[seq_along(fits)]
+    }
+
+    for (k in seq_along(fits)) {
+      rhs_raw <- rhs_keys[[k]]
+      ds <- fit_bundle$design_specs[[rhs_raw]]
+      if (is.null(ds)) stop("Missing design_specs for RHS: ", rhs_raw)
+
+      Xn <- build_design_new(ds, data.table::as.data.frame(newdata))
+      fit_k <- fits[[k]]
+
+      p <- if (inherits(fit_k, "glm_stripped")) {
+        predict_from_coef(fit_k$coefficients, fit_k$linkinv, Xn)
+      } else {
+        # full glm object: still predict via frozen X to preserve frozen spline basis
+        coefs <- coef_from_glm(fit_k, ds$x_cols)
+        predict_from_coef(coefs, fit_k$family$linkinv, Xn)
+      }
+
+      out[, k] <- clip01(p)
+    }
+
+    out
   }
 
   # --- runner --------------------------------------------------------------
@@ -313,7 +398,7 @@ make_glm_runner <- function(
         if (strip_fit) {
           fits[[k]] <- strip_glm_coef(fit_k, x_cols = built$design_spec$x_cols)
         } else {
-          # fall back to full glm object (larger)
+          # store full glm object, but predictions will still use frozen design matrix
           fits[[k]] <- suppressWarnings(stats::glm(
             stats::as.formula(paste0("in_bin ~ ", normalize_rhs(rhs_raw))),
             data = train_set,
@@ -335,25 +420,9 @@ make_glm_runner <- function(
     },
 
     predict = function(fit_bundle, newdata, ...) {
-      nd <- as.data.frame(newdata)
-
-      K <- length(fit_bundle$fits)
-      preds <- matrix(NA_real_, nrow = nrow(nd), ncol = K)
-
-      for (k in seq_len(K)) {
-        rhs_raw <- tune_grid$rhs[k]
-        Xn <- build_design_new(fit_bundle$design_specs[[rhs_raw]], nd)
-
-        fit_k <- fit_bundle$fits[[k]]
-        if (inherits(fit_k, "glm_stripped")) {
-          preds[, k] <- predict_glm_stripped(fit_k, Xn)
-        } else {
-          # full glm fallback
-          preds[, k] <- stats::predict(fit_k, newdata = nd, type = "response", ...)
-        }
-      }
-
-      preds
+      dt <- data.table::as.data.table(newdata)
+      # keep consistent with hazard runners: use predict_hazards() for scoring
+      predict_hazards(fit_bundle = fit_bundle, newdata = dt, ...)
     },
 
     fit_one = function(train_set, tune, ...) {
@@ -379,7 +448,15 @@ make_glm_runner <- function(
         ...
       ))
 
-      fit_store <- if (strip_fit) strip_glm_coef(fit_k, x_cols = built$design_spec$x_cols) else fit_k
+      fit_store <- if (strip_fit) strip_glm_coef(fit_k, x_cols = built$design_spec$x_cols) else {
+        suppressWarnings(stats::glm(
+          stats::as.formula(paste0("in_bin ~ ", normalize_rhs(rhs_raw))),
+          data = train_set,
+          family = stats::binomial(),
+          weights = wts_vec,
+          ...
+        ))
+      }
 
       list(
         fits = list(fit_store),
@@ -388,6 +465,91 @@ make_glm_runner <- function(
         stripped = isTRUE(strip_fit),
         tune = k
       )
+    },
+
+    # hazard-based sampling (match xgboost conventions)
+    sample = function(fit_bundle, newdata, n_samp, seed = NULL, ...) {
+      if (!data.table::is.data.table(newdata)) stop("newdata must be a data.table.")
+      if (length(n_samp) != 1L || is.na(n_samp) || n_samp < 1L) stop("n_samp must be a positive integer.")
+      n_samp <- as.integer(n_samp)
+
+      fits <- fit_bundle$fits
+      if (is.null(fits) || !length(fits)) stop("fit_bundle does not contain fits.")
+      if (length(fits) != 1L) stop("sample() assumes K=1: fit_bundle$fits must have length 1 (selected model).")
+
+      if (!("bin_lower" %in% names(newdata)) || !("bin_upper" %in% names(newdata))) {
+        stop("newdata must contain 'bin_lower' and 'bin_upper' columns for sampling.")
+      }
+      if (!(id_col %in% names(newdata))) {
+        stop("newdata must contain id_col='", id_col, "' for sampling.")
+      }
+      if (!(bin_var %in% names(newdata))) {
+        stop("newdata must contain bin_var='", bin_var, "' for sampling.")
+      }
+
+      if (!is.null(seed)) set.seed(seed)
+
+      # Predict hazards (n_long x 1) in the original newdata row order
+      haz <- predict_hazards(fit_bundle = fit_bundle, newdata = newdata, ...)
+      haz <- as.numeric(haz[, 1])
+
+      dt <- data.table::as.data.table(newdata)
+      dt[, .row_id__ := .I]
+      data.table::setorderv(dt, c(id_col, bin_var))
+      haz <- haz[dt$.row_id__]  # reorder hazards to match dt after sorting
+
+      rows_by_id <- split(seq_len(nrow(dt)), dt[[id_col]])
+      ids <- names(rows_by_id)
+
+      out <- matrix(NA_real_, nrow = length(ids), ncol = n_samp)
+      rownames(out) <- ids
+      warned_zero_mass <- FALSE
+
+      for (ii in seq_along(ids)) {
+        rr <- rows_by_id[[ii]]
+        m <- length(rr)
+        if (m < 1L) next
+
+        h <- clip01(haz[rr])
+
+        lower <- dt$bin_lower[rr]
+        upper <- dt$bin_upper[rr]
+        if (any(!is.finite(lower)) || any(!is.finite(upper)) || any(upper <= lower)) {
+          stop("Invalid bin_lower/bin_upper for id='", ids[[ii]], "'.")
+        }
+
+        # masses p_j = h_j * prod_{l<j}(1 - h_l)
+        if (m == 1L) {
+          mass <- h
+        } else {
+          s_prev <- c(1, cumprod(1 - h)[-m])
+          mass <- h * s_prev
+        }
+
+        tot <- sum(mass)
+        if (!is.finite(tot) || tot <= 0) {
+
+          if (!warned_zero_mass) {
+            warning(
+              "Hazard-based sampling encountered zero or non-finite total mass for at least one observation.\n",
+              "Falling back to uniform sampling over bins for those cases.\n",
+              "This can occur if predicted hazards are numerically near zero across all bins\n",
+              "or if survival past the grid has probability ~1."
+            )
+            warned_zero_mass <- TRUE
+          }
+
+          j <- sample.int(m, size = n_samp, replace = TRUE)
+
+        } else {
+          pmf <- mass / tot
+          j <- sample.int(m, size = n_samp, replace = TRUE, prob = pmf)
+        }
+
+        out[ii, ] <- stats::runif(n_samp, min = lower[j], max = upper[j])
+      }
+
+      out
     }
   )
 }

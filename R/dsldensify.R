@@ -599,3 +599,213 @@ predict.dsldensify <- function(
 
   dens_out
 }
+
+
+#' @export
+rsample <- function(object, ...) UseMethod("rsample")
+
+#' Sample from a fitted dsldensify conditional density
+#'
+#' @description
+#' Draws samples \eqn{A^* \sim \hat f(\cdot \mid W)} from a fitted \code{dsldensify}
+#' object.
+#'
+#' For a **hazard-based** winner, this method constructs the required **long**
+#' hazard grid internally (by repeating each row of \code{W} over all bins) using
+#' the chosen grid stored in \code{object}:
+#' \itemize{
+#'   \item \code{object$breaks} and \code{object$bin_length} are used to create
+#'         \code{breaks_full},
+#'   \item \code{bin_id} is \code{1, ..., object$n_bins},
+#'   \item \code{bin_lower} and \code{bin_upper} are attached per \code{bin_id}.
+#' }
+#' It then delegates to the hazard runner's \code{sample()} method, which assumes
+#' \code{K = 1} (selected fit) and samples via bin-mass + within-bin uniform draws.
+#'
+#' For a **direct-density** winner (identified by \code{object$grid_type == "direct"}),
+#' this method delegates directly to the runner's \code{sample()} method on wide
+#' \code{W}.
+#'
+#' @param object A fitted \code{dsldensify} object.
+#' @param W A data.frame/data.table of covariates at which to sample.
+#' @param n_samp Integer number of draws per row of \code{W}.
+#' @param type Character; \code{"full"} uses \code{object$full_fit}.
+#'   \code{"cv"} uses fold-specific fits stored in \code{object$cv_fit}.
+#' @param fold_id Optional integer vector of fold assignments used when
+#'   \code{type = "cv"}. Must have length \code{nrow(W)} and take values in
+#'   \code{1, ..., V}, where \code{V = length(object$cv_fit)}. Each entry indicates
+#'   which fold-specific fit should be used for the corresponding observation.
+#' @param seed Optional integer seed passed to \code{set.seed()} before sampling.
+#' @param ... Passed through to the underlying runner \code{sample()} method.
+#'
+#' @return A numeric matrix of dimension \code{nrow(W) x n_samp}.
+#' @export
+rsample.dsldensify <- function(
+  object,
+  W,
+  n_samp = 1L,
+  type = c("full", "cv"),
+  fold_id = NULL,
+  seed = NULL,
+  ...
+) {
+  type <- match.arg(type)
+  if (length(n_samp) != 1L || is.na(n_samp) || n_samp < 1L) stop("n_samp must be a positive integer.")
+  n_samp <- as.integer(n_samp)
+
+  if (!is.null(seed)) set.seed(seed)
+
+  runner <- object$runner
+  if (is.null(runner) || !is.list(runner) || !is.function(runner$sample)) {
+    stop("This dsldensify object does not have a runner with a sample() method.")
+  }
+
+  W0 <- if (requireNamespace("data.table", quietly = TRUE)) {
+    data.table::as.data.table(W)
+  } else {
+    as.data.frame(W)
+  }
+  n <- nrow(W0)
+  if (n < 1L) stop("W must have at least one row.")
+
+  # ---- direct winner: call runner$sample on wide W ----
+  if (identical(object$grid_type, "direct")) {
+    if (type == "full") {
+      if (is.null(object$full_fit)) stop("object$full_fit is NULL; cannot sample type='full'.")
+      return(runner$sample(object$full_fit, newdata = W0, n_samp = n_samp, seed = NULL, ...))
+    }
+
+    # type == "cv"
+    if (is.null(object$cv_fit) || !length(object$cv_fit)) stop("object$cv_fit is NULL/empty; cannot sample type='cv'.")
+    V <- length(object$cv_fit)
+    if (is.null(fold_id)) stop("fold_id must be provided when type='cv'.")
+    if (length(fold_id) != n) stop("fold_id must have length nrow(W).")
+    if (any(is.na(fold_id)) || any(fold_id < 1L) || any(fold_id > V)) {
+      stop("fold_id entries must be in 1..length(object$cv_fit).")
+    }
+
+    out <- matrix(NA_real_, nrow = n, ncol = n_samp)
+    for (v in seq_len(V)) {
+      idx <- which(fold_id == v)
+      if (!length(idx)) next
+      fit_v <- object$cv_fit[[v]]$fit
+      if (is.null(fit_v)) stop("cv_fit[[", v, "]]$fit is NULL.")
+      out[idx, ] <- runner$sample(fit_v, newdata = W0[idx, , drop = FALSE], n_samp = n_samp, seed = NULL, ...)
+    }
+    return(out)
+  }
+
+  # ---- hazard winner: build long hazard grid from object + W, then delegate ----
+  if (!requireNamespace("data.table", quietly = TRUE)) {
+    stop("Package 'data.table' is required for hazard sampling.")
+  }
+
+  if (is.null(object$n_bins) || is.na(object$n_bins) || object$n_bins < 1L) {
+    stop("Hazard sampling requires object$n_bins (positive integer).")
+  }
+  if (is.null(object$breaks) || is.null(object$bin_length)) {
+    stop("Hazard sampling requires object$breaks and object$bin_length.")
+  }
+
+  n_bins <- as.integer(object$n_bins)
+  breaks <- as.numeric(object$breaks)
+  bin_length <- as.numeric(object$bin_length)
+
+  if (length(breaks) < 1L) stop("object$breaks must have length >= 1.")
+  if (length(bin_length) < 1L) stop("object$bin_length must have length >= 1.")
+
+  # same construction used in predict.dsldensify
+  breaks_full <- c(breaks, tail(breaks, 1) + tail(bin_length, 1))
+
+  if (length(breaks_full) != (n_bins + 1L)) {
+    stop(
+      "Inconsistent grid: expected length(breaks_full) == n_bins + 1.\n",
+      "Got length(breaks_full) = ", length(breaks_full),
+      " and n_bins = ", n_bins, "."
+    )
+  }
+
+  make_long_grid <- function(W_dt, breaks_full) {
+    W_dt <- data.table::as.data.table(W_dt)
+    nW <- nrow(W_dt)
+
+    # stable per-row id (runner expects obs_id/bin_id names)
+    W_dt[, obs_id := seq_len(nW)]
+
+    # bin table
+    bin_dt <- data.table::data.table(
+      bin_id = seq_len(length(breaks_full) - 1L),
+      bin_lower = breaks_full[-length(breaks_full)],
+      bin_upper = breaks_full[-1L]
+    )
+
+    # cartesian product obs_id x bin_id (repeat W across bins) via CJ()
+    long_dt <- data.table::CJ(
+      obs_id = W_dt$obs_id,
+      bin_id = bin_dt$bin_id,
+      unique = TRUE
+    )
+
+    # attach bin endpoints + W covariates
+    long_dt <- merge(long_dt, bin_dt, by = "bin_id", all.x = TRUE, sort = FALSE)
+    long_dt <- merge(long_dt, W_dt, by = "obs_id", all.x = TRUE, sort = FALSE)
+
+    data.table::setorderv(long_dt, c("obs_id", "bin_id"))
+    long_dt
+  }
+
+
+  if (type == "full") {
+    if (is.null(object$full_fit)) stop("object$full_fit is NULL; cannot sample type='full'.")
+
+    long_newdata <- make_long_grid(W_dt = W0, breaks_full = breaks_full)
+    samp <- runner$sample(object$full_fit, newdata = long_newdata, n_samp = n_samp, seed = NULL, ...)
+
+    # runner returns one row per obs_id (typically as rownames); map back to 1..n
+    out <- matrix(NA_real_, nrow = n, ncol = n_samp)
+    if (!is.null(rownames(samp))) {
+      ridx <- suppressWarnings(as.integer(rownames(samp)))
+      if (anyNA(ridx)) stop("Unexpected rownames in runner sample output; expected obs_id integers.")
+      out[ridx, ] <- samp
+    } else {
+      if (nrow(samp) != n) stop("Unexpected sample() output rows: expected nrow(W).")
+      out[,] <- samp
+    }
+    return(out)
+  }
+
+  # type == "cv"
+  if (is.null(object$cv_fit) || !length(object$cv_fit)) stop("object$cv_fit is NULL/empty; cannot sample type='cv'.")
+  V <- length(object$cv_fit)
+  if (is.null(fold_id)) stop("fold_id must be provided when type='cv'.")
+  if (length(fold_id) != n) stop("fold_id must have length nrow(W).")
+  if (any(is.na(fold_id)) || any(fold_id < 1L) || any(fold_id > V)) {
+    stop("fold_id entries must be in 1..length(object$cv_fit).")
+  }
+
+  out <- matrix(NA_real_, nrow = n, ncol = n_samp)
+
+  # fold-wise sampling to ensure each row uses its fold-specific fit
+  for (v in seq_len(V)) {
+    idx <- which(fold_id == v)
+    if (!length(idx)) next
+
+    fit_v <- object$cv_fit[[v]]$fit
+    if (is.null(fit_v)) stop("cv_fit[[", v, "]]$fit is NULL.")
+
+    long_newdata_v <- make_long_grid(W_dt = W0[idx, , drop = FALSE], breaks_full = breaks_full)
+    samp_v <- runner$sample(fit_v, newdata = long_newdata_v, n_samp = n_samp, seed = NULL, ...)
+
+    # within-fold, obs_id is 1..length(idx)
+    if (!is.null(rownames(samp_v))) {
+      local_id <- suppressWarnings(as.integer(rownames(samp_v)))
+      if (anyNA(local_id)) stop("Unexpected rownames in fold sample output; expected obs_id integers.")
+      out[idx[local_id], ] <- samp_v
+    } else {
+      if (nrow(samp_v) != length(idx)) stop("Unexpected sample() output rows within fold ", v, ".")
+      out[idx, ] <- samp_v
+    }
+  }
+
+  out
+}

@@ -8,6 +8,11 @@
 #' \code{rhs_list}. The runner exposes \code{log_density()} (and optionally
 #' \code{density()}) for use in \code{run_direct_setting()} and global selection.
 #'
+#' The runner also provides \code{sample()} to draw
+#' \eqn{A^* \sim \hat f(\cdot \mid W)} from the fitted conditional normal model.
+#' Sampling is intended to be called on a **selected** fit (i.e.,
+#' \code{length(fit_bundle$fits) == 1}).
+#'
 #' @section Numeric-only requirement:
 #' For stable behavior across CV folds and to avoid factor-level bookkeeping,
 #' this runner is intended for **numeric predictors only**. RHS formulas should
@@ -34,6 +39,7 @@
 #'   \item{fit}{Function \code{fit(train_set, ...)} returning \code{list(fits=...)}.}
 #'   \item{log_density}{Function returning an \code{n x K} matrix of log densities.}
 #'   \item{density}{Function returning an \code{n x K} matrix of densities.}
+#'   \item{sample}{Function drawing samples \code{A*} given \code{W} (assumes \code{K=1}).}
 #'   \item{fit_one}{Fit only the selected tune (returns minimal bundle).}
 #' }
 #'
@@ -133,6 +139,36 @@ make_gaussian_homosked_runner <- function(
 
     density = function(fit_bundle, newdata, eps = 1e-12, ...) {
       exp(log_density(fit_bundle, newdata, eps = eps, ...))
+    },
+
+    # Draw A* ~ Normal(mu(W), sigma^2) for each row of newdata (wide W).
+    # Assumes fit_bundle contains exactly one tuned fit (K = 1), which is the
+    # intended usage after global selection or fit_one().
+    sample = function(fit_bundle, newdata, n_samp, seed = NULL, eps = 1e-12, ...) {
+      if (length(n_samp) != 1L || is.na(n_samp) || n_samp < 1L) stop("n_samp must be a positive integer.")
+      n_samp <- as.integer(n_samp)
+      if (!is.null(seed)) set.seed(seed)
+
+      fits <- fit_bundle$fits
+      if (is.null(fits) || !length(fits)) stop("fit_bundle does not contain fits.")
+      if (length(fits) != 1L) stop("sample() assumes K=1: fit_bundle$fits must have length 1 (selected model).")
+
+      nd <- as.data.frame(newdata)
+      obj <- fits[[1]]
+
+      mu <- stats::predict(obj$fit, newdata = nd, ...)
+      sd1 <- pmax(as.numeric(obj$sigma), sqrt(eps))
+      if (!is.finite(sd1) || sd1 <= 0) stop("Non-positive or non-finite sigma in fit bundle.")
+
+      n <- length(mu)
+      # vectorized: generate n*n_samp normals, then reshape
+      out <- matrix(
+        stats::rnorm(n * n_samp, mean = rep(mu, times = n_samp), sd = sd1),
+        nrow = n,
+        ncol = n_samp
+      )
+
+      out
     },
 
     fit_one = function(train_set, tune, ...) {

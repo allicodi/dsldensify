@@ -17,173 +17,176 @@ make_rf_runner(
   weights_col = "wts",
   respect_unordered_factors = "order",
   importance = "none",
-  seed = NULL
+  seed = NULL,
+  ...
 )
 }
 \arguments{
-\item{rhs_list}{A list of RHS specifications, either:
-\itemize{
-  \item one-sided formulas such as \code{~ W1 + W2 + bin_id}, or
-  \item character strings such as \code{"W1 + W2 + bin_id"}.
-}
-These RHS are used for **column selection** only. If \code{bin_id_col} is
-missing, it is appended automatically.}
+\item{rhs_list}{A list of RHS specifications, either one-sided formulas
+(for example, ~ W1 + W2 + bin_id) or character strings
+(for example, "W1 + W2 + bin_id"). These RHS are used for column selection
+only. If bin_id_col is missing, it is appended automatically.}
 
-\item{mtry_grid}{Optional integer vector of \code{mtry} values to tune over.
-If \code{NULL}, \code{mtry} is set per fit to \code{floor(sqrt(p))} (bounded
-to \code{[1, p]}), where \code{p} is the number of selected features.}
+\item{mtry_grid}{Optional integer vector of mtry values to tune over.
+If NULL, mtry is set per fit to floor(sqrt(p)) bounded to [1, p], where p
+is the number of selected features.}
 
 \item{min_node_size_grid}{Integer vector of minimum terminal node sizes
-passed to \code{ranger::ranger(min.node.size = ...)}.}
+passed to ranger::ranger(min.node.size = ...).}
 
 \item{num_trees}{Integer number of trees in each forest.}
 
 \item{sampling_grid}{Character vector specifying sampling schemes to include.
-Must be a subset of \code{c("bootstrap", "subsample")}.}
+Must be a subset of c("bootstrap", "subsample").}
 
 \item{subsample_fraction_grid}{Numeric vector of sampling fractions used
-only when \code{sampling = "subsample"} (sampling without replacement).}
+only when sampling = "subsample".}
 
-\item{outcome_col}{Name of the binary outcome column in the long hazard data.
-Defaults to \code{"in_bin"}.}
+\item{outcome_col}{Name of the binary outcome column in the long hazard data.}
 
-\item{bin_id_col}{Name of the time-bin column. Defaults to \code{"bin_id"}.
-This column is enforced in every feature set unless already included.}
+\item{bin_id_col}{Name of the time-bin column. This column is enforced in
+every feature set unless already included.}
 
-\item{use_weights_col}{Logical. If \code{TRUE}, pass \code{weights_col} as
-\code{case.weights} to \code{ranger::ranger()}.}
+\item{use_weights_col}{Logical. If TRUE, pass weights_col as case.weights to
+ranger::ranger().}
 
-\item{weights_col}{Name of the weights column. Defaults to \code{"wts"}.}
+\item{weights_col}{Name of the weights column.}
 
 \item{respect_unordered_factors}{Passed to
-\code{ranger::ranger(respect.unordered.factors = ...)}.}
+ranger::ranger(respect.unordered.factors = ...).}
 
-\item{importance}{Passed to \code{ranger::ranger(importance = ...)}.}
+\item{importance}{Passed to ranger::ranger(importance = ...).}
 
 \item{seed}{Optional integer seed. If provided, a deterministic tune-specific
-seed \code{seed + .tune} is used during fitting.}
+seed seed + .tune is used during fitting.}
+
+\item{...}{Additional arguments forwarded to ranger::ranger().}
 }
 \value{
-A named list (runner) with elements:
-\describe{
-  \item{method}{Character string \code{"rf"}.}
-  \item{tune_grid}{Data frame describing the tuning grid, including \code{.tune}.}
-  \item{fit}{Function \code{fit(train_set, ...)} returning a fit bundle.}
-  \item{predict}{Function \code{predict(fit_bundle, newdata, ...)} returning
-        an \code{n_long x K} matrix of hazard predictions.}
-  \item{fit_one}{Function \code{fit_one(train_set, tune, ...)} fitting only
-        the selected tuning index.}
-}
+A named list (runner) with the following elements:
+  method: Character string "rf".
+  tune_grid: Data frame describing the tuning grid, including .tune.
+  fit: Function fit(train_set, ...) returning a fit bundle.
+  predict: Function predict(fit_bundle, newdata, ...) returning an
+    n_long x K matrix of hazard predictions.
+  fit_one: Function fit_one(train_set, tune, ...) fitting only the selected
+    tuning index.
+  sample: Function sample(fit_bundle, newdata, n_samp, ...) drawing samples
+    from the implied conditional density (assumes K = 1).
+
+Data requirements
+
+The runner expects train_set and newdata as data.table objects in long hazard
+format, including:
+  - a binary outcome column outcome_col (default "in_bin"),
+  - a time-bin column bin_id_col (default "bin_id"),
+  - covariates referenced in rhs_list,
+  - an optional weight column weights_col (default "wts").
+
+newdata passed to sample() must additionally include:
+  - obs_id,
+  - bin_lower,
+  - bin_upper.
 }
 \description{
-Constructs a **runner** (learner adapter) compatible with the
-\code{run_grid_setting()} / \code{summarize_and_select()} workflow used in
-\code{dsl_densify}. The runner fits probabilistic random forest models via
-\code{ranger::ranger()} on long-format discrete-time hazard data
-(binary outcome \code{in_bin}), and supports tuning over:
-\itemize{
-  \item multiple RHS feature specifications (\code{rhs_list}),
-  \item node-size parameters (\code{min_node_size_grid}),
-  \item optional feature-subset sizes (\code{mtry_grid}),
-  \item sampling behavior (bootstrap vs subsampling).
-}
-
-The fitted models estimate per-bin discrete-time hazards
-\eqn{P(T \in \text{bin}_j \mid T \ge \text{bin}_j, W)} using a probabilistic
-classification forest (\code{probability = TRUE}), returning predicted
-probabilities for \code{in_bin = 1}.
+Constructs a runner (learner adapter) compatible with the
+run_grid_setting() / summarize_and_select() workflow used in dsl_densify.
+The runner fits probabilistic random forest models via ranger::ranger()
+on long-format discrete-time hazard data with binary outcome in_bin and
+returns per-bin discrete-time hazard estimates as class probabilities
+for in_bin = 1.
 }
 \details{
-## Data requirements
-The runner expects \code{train_set} and \code{newdata} as \code{data.table}s
-in the **long hazard format** produced by \code{format_long_hazards()},
-including:
-\itemize{
-  \item a binary outcome column \code{outcome_col} (default \code{in_bin}),
-  \item a time-bin column \code{bin_id_col} (default \code{bin_id}),
-  \item covariates referenced in \code{rhs_list},
-  \item an optional weight column \code{weights_col} (default \code{wts}).
-}
+Tuning is performed over a grid defined by:
+  - multiple RHS feature specifications (rhs_list),
+  - node-size parameters (min_node_size_grid),
+  - optional feature-subset sizes (mtry_grid),
+  - sampling behavior (bootstrap vs subsampling without replacement).
 
-Internally, the runner fits a probabilistic classification forest by
-constructing a data.frame containing \code{outcome_col} and the selected
-feature columns, and fitting \code{outcome_col ~ .}. If the outcome is numeric
-or integer, it is coerced to a factor with levels \code{c(0, 1)} to ensure
-probability predictions are returned in a consistent format.
+The fitted models estimate per-bin discrete-time hazards
+  P(T in bin_j | T >= bin_j, W)
+using probability = TRUE, returning predicted probabilities for class "1".
 
-## Prediction
-\code{predict()} returns the predicted probability for class \code{"1"} from
-\code{ranger} (i.e., \code{P(in_bin = 1)}). Predictions are returned as an
-\code{n_long x K} numeric matrix aligned with the tuning grid. Column names
-are set to the corresponding \code{.tune} values.
+RHS specifications (column selection only)
 
-## Model selection
-Each tuning row corresponds to a single fitted forest, so no \code{select_fit()}
-method is required.
-}
-\section{RHS specifications (column selection only)}{
+The rhs_list argument defines feature sets by extracting variable names:
+  - RHS may be provided as one-sided formulas (for example, ~ W1 + W2),
+    or as character strings (for example, "W1 + W2").
+  - Each RHS is converted to a formula internally and variable names are
+    extracted via all.vars().
+  - No transformations, interactions, or spline terms are evaluated; the
+    referenced columns must already exist in the long hazard data.
 
-The \code{rhs_list} argument is used to define a feature set by extracting
-variable names from each RHS specification:
-\itemize{
-  \item RHS may be provided as one-sided formulas (e.g., \code{~ W1 + W2}),
-        or as character strings (e.g., \code{"W1 + W2"}).
-  \item Each RHS is converted to a formula internally and variable names are
-        extracted via \code{all.vars()}.
-  \item The runner does not evaluate transformations; it assumes the referenced
-        columns already exist in the long hazard data.
-}
-
-By default, \code{bin_id_col} is enforced as part of the feature set; if it is
+By default, bin_id_col is enforced as part of each feature set. If it is
 missing from an RHS specification, it is appended automatically.
+
+Numeric-only requirement
+
+This runner is intended for use with numeric predictors only. All columns
+referenced by rhs_list (including bin_id) should already be numeric.
+Factors, characters, and ordered factors are not supported and should be
+encoded upstream.
+
+Tuning grid and prediction layout
+
+Each row of tune_grid corresponds to exactly one fitted forest.
+The tune_grid is constructed so that RHS varies first, followed by
+min_node_size, sampling behavior (sampling, replace, sample_fraction), and
+optionally mtry (if mtry_grid is supplied). During cross-validation, predict()
+returns an n_long x K matrix of predicted hazards, where K = nrow(tune_grid),
+with columns aligned to .tune.
+
+Prediction delegates to an internal predict_hazards() helper so that
+prediction and sampling always use identical hazard estimates.
+
+Sampling from the fitted hazard model
+
+The runner provides a sample() method that generates draws
+  A* ~ f_hat(· | W)
+from the implied conditional density under the discrete-time hazard
+representation.
+
+Sampling assumes the fit_bundle contains exactly one fitted model
+(length(fit_bundle$fits) == 1). This is the intended usage after model
+selection, for example via select_fit_tune() or fit_one().
+
+IMPORTANT: The sample() method expects newdata in long hazard format.
+Expansion of wide W to long form (repeating rows across all bins and
+attaching bin_lower and bin_upper) is handled upstream by
+sample.dsldensify(). The runner itself never constructs hazard grids.
+
+For each subject, sampling proceeds by:
+  - predicting hazards h_j for all bins,
+  - computing implied bin masses
+      p_j = h_j * prod_{l < j} (1 - h_l),
+  - normalizing the masses to sum to one,
+  - sampling a bin index according to p_j,
+  - sampling uniformly within the selected bin.
+
+If the total mass is non-finite or non-positive for any subject, a single
+warning is issued and sampling for those subjects falls back to uniform
+sampling over bins.
+
+Sampling as a tuning dimension
+
+The runner supports a sampling scheme tuning dimension via sampling_grid:
+  - "bootstrap" uses sampling with replacement (replace = TRUE) and
+    sample.fraction = 1.0.
+  - "subsample" uses sampling without replacement (replace = FALSE) with
+    fractions provided in subsample_fraction_grid.
+
+Weights
+
+If use_weights_col = TRUE, observation weights are passed to ranger::ranger()
+via case.weights using weights_col (default "wts"). If use_weights_col = TRUE
+and weights_col is missing, fitting errors.
+
+Deterministic seeding
+
+If seed is provided, a tune-specific seed is used for each fit by calling
+set.seed(seed + .tune). This yields deterministic fitting behavior across
+runs while keeping different tuning rows distinct.
 }
-
-\section{Tuning grid and prediction layout}{
-
-The internal \code{tune_grid} is ordered such that:
-\itemize{
-  \item RHS varies first,
-  \item then \code{min_node_size},
-  \item then sampling behavior (\code{sampling}, \code{replace}, \code{sample_fraction}),
-  \item and optionally \code{mtry} (if \code{mtry_grid} is supplied).
-}
-
-Each row of \code{tune_grid} corresponds to **exactly one fitted forest**.
-During cross-validation, \code{predict()} returns an \code{n_long x K} matrix
-of predicted hazards, where \code{K = nrow(tune_grid)}, with columns aligned
-to \code{.tune}.
-}
-
-\section{Sampling as a tuning dimension}{
-
-The runner supports a sampling scheme tuning dimension via \code{sampling_grid}:
-\itemize{
-  \item \code{"bootstrap"} uses sampling with replacement
-        (\code{replace = TRUE}, \code{sample.fraction = 1.0}).
-  \item \code{"subsample"} uses sampling without replacement
-        (\code{replace = FALSE}) with fractions provided in
-        \code{subsample_fraction_grid}.
-}
-
-This allows direct comparison of bootstrap forests and subsampled forests
-under the same runner interface.
-}
-
-\section{Weights}{
-
-If \code{use_weights_col = TRUE}, observation weights are passed to
-\code{ranger::ranger()} via \code{case.weights}. The weight column defaults
-to \code{wts}. If \code{use_weights_col = TRUE} and \code{weights_col} is
-missing, fitting will error.
-}
-
-\section{Deterministic seeding}{
-
-If \code{seed} is provided, a tune-specific seed is used for each fit by
-setting \code{set.seed(seed + .tune)}. This yields deterministic fitting
-behavior across runs while keeping different tuning rows distinct.
-}
-
 \examples{
 rhs_list <- list(
   ~ bin_id + W1 + W2,

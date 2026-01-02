@@ -1060,7 +1060,6 @@ run_direct_setting <- function(
   )
 }
 
-
 strip_glm <- function(model) {
   model$env <- NULL
   model$y = c()
@@ -1088,6 +1087,7 @@ strip_glm <- function(model) {
   return(model)
 }
 
+#' @export 
 predict.strip_glm <- function(object, newdata, ...){
   coefs <- object$coefficients
   family <- object$family

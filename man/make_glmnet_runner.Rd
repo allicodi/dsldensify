@@ -11,138 +11,151 @@ make_glmnet_runner(
   use_weights_col = TRUE,
   standardize = TRUE,
   intercept = TRUE,
-  strip_fit = TRUE
+  strip_fit = TRUE,
+  ...
 )
 }
 \arguments{
-\item{rhs_list}{A list of RHS specifications, either:
-\itemize{
-  \item one-sided formulas such as \code{~ W1 + ns(bin_id, df = 5)}, or
-  \item character strings such as \code{"W1 + splines::ns(bin_id, df = 5)"}.
-}
-These RHS are used to construct \code{in_bin ~ <rhs>} internally.}
+\item{rhs_list}{A list of RHS specifications, either as one-sided formulas
+(for example, ~ W1 + ns(bin_id, df = 5)) or as character strings
+(for example, "W1 + splines::ns(bin_id, df = 5)").}
 
 \item{alpha_grid}{Numeric vector of elastic net mixing parameters passed to
-\code{glmnet::glmnet(alpha = ...)}. Typical values lie in \code{[0, 1]}, where
-\code{alpha = 1} corresponds to the lasso and \code{alpha = 0} to ridge
-regression.}
+glmnet::glmnet(alpha = ...). Typical values lie in [0, 1], where alpha = 1
+corresponds to the lasso and alpha = 0 to ridge regression.}
 
 \item{lambda_grid}{Numeric vector of strictly positive penalty values.
-This grid is treated as fixed and is reused across folds and grid settings
-to ensure tuning alignment. Must have length at least 2. Users should verify
-that the grid passed in is diverse enough. If tuning parameters at the edge
-of the grid are being selected by CV, then it could be an indication that a 
-broader grid is required.}
+This grid is treated as fixed and reused across folds and grid settings
+to ensure tuning alignment. Must have length at least 2.}
 
-\item{use_weights_col}{Logical. If \code{TRUE} and the training data contain a
-column named \code{wts}, it is passed as \code{weights = ...} to
-\code{glmnet::glmnet()}. Otherwise, fitting is unweighted.}
+\item{use_weights_col}{Logical. If TRUE and the training data contain a
+column named wts, it is passed as case weights to glmnet::glmnet().}
 
-\item{standardize}{Logical. Passed directly to \code{glmnet::glmnet(standardize = ...)}.}
+\item{standardize}{Logical. Passed to glmnet::glmnet(standardize = ...).}
 
-\item{intercept}{Logical. Passed directly to \code{glmnet::glmnet(intercept = ...)}.}
+\item{intercept}{Logical. Passed to glmnet::glmnet(intercept = ...).}
 
-\item{strip_fit}{Logical. If \code{TRUE} (default), store a lightweight fit
-representation (intercept and coefficient matrix only) rather than the full
-\code{glmnet} object.}
+\item{strip_fit}{Logical. If TRUE (default), store a lightweight
+coefficient-based representation of each fitted model.}
+
+\item{...}{Additional arguments forwarded to glmnet::glmnet().}
 }
 \value{
-A named list (runner) with elements:
-\describe{
-  \item{method}{Character string \code{"glmnet"}.}
-  \item{tune_grid}{Data frame with columns \code{.tune}, \code{rhs},
-        \code{alpha}, and \code{lambda}.}
-  \item{fit}{Function \code{fit(train_set, ...)} returning a fit bundle.}
-  \item{predict}{Function \code{predict(fit_bundle, newdata, ...)} returning
-        an \code{n_long x K} matrix of hazard predictions.}
-  \item{fit_one}{Function \code{fit_one(train_set, tune, ...)} fitting only
-        the selected tuning index.}
-}
+A named list (runner) with the following elements:
+  method: Character string "glmnet".
+  tune_grid: Data frame describing the tuning grid, including .tune, rhs,
+    alpha, and lambda.
+  fit: Function fit(train_set, ...) returning a fit bundle.
+  predict: Function predict(fit_bundle, newdata, ...) returning an
+    n_long x K matrix of predicted hazards.
+  fit_one: Function fit_one(train_set, tune, ...) fitting only the selected
+    tuning index.
+  select_fit: Function select_fit(fit_bundle, tune) returning a reduced
+    fit bundle for a single tuning index (K = 1).
+  sample: Function sample(fit_bundle, newdata, n_samp, ...) drawing samples
+    from the implied conditional density (assumes K = 1).
+
+Data requirements
+
+The runner expects train_set and newdata in long hazard format, including:
+  - a binary outcome column in_bin,
+  - a time-bin column bin_id,
+  - covariates referenced in rhs_list,
+  - an optional weight column wts.
+
+newdata passed to sample() must additionally include:
+  - obs_id,
+  - bin_lower,
+  - bin_upper.
 }
 \description{
-Constructs a **runner** (learner adapter) compatible with the
-\code{run_grid_setting()} / \code{summarize_and_select()} workflow used in
-dsl_densify. The runner fits penalized logistic regression models via
-\code{glmnet::glmnet()} on long-format discrete-time hazard data
-(binary outcome \code{in_bin}), and supports a tuning grid over:
-\itemize{
-  \item multiple RHS model specifications (\code{rhs_list}),
-  \item elastic net mixing parameters (\code{alpha_grid}),
-  \item a fixed penalty grid (\code{lambda_grid}).
-}
-
-This runner supports natural spline terms specified directly in the RHS
-formulas using \code{ns()} or \code{splines::ns()}, under a restricted but
-relatively robust spline policy:
-\itemize{
-  \item Only \code{ns(<symbol>, df = ...)} is supported (the first argument must
-        be a bare variable name, i.e., not \code{ns(log(variable))}).
-  \item \code{splines::ns()} is accepted but internally is rewritten to \code{ns()}.
-  \item Knot locations are computed on the training data and then frozen for
-        prediction by evaluating \code{model.matrix()} in an environment where
-        \code{ns()} is replaced by a wrapper that injects the stored knots and
-        boundary knots. This ensures reproducible behavior across training and 
-        validation folds
-}
+Constructs a runner (learner adapter) compatible with the
+run_grid_setting() / summarize_and_select() workflow used in dsl_densify.
+The runner fits penalized logistic regression models via glmnet::glmnet()
+on long-format discrete-time hazard data with binary outcome in_bin.
 }
 \details{
-## Data requirements
-The runner expects \code{train_set} and \code{newdata} in the **long hazard
-format** produced by \code{format_long_hazards()}, including:
-\itemize{
-  \item a binary outcome column \code{in_bin},
-  \item covariates referenced in \code{rhs_list},
-  \item an optional \code{wts} column of observation weights.
+Tuning is performed over a grid defined by:
+  - multiple RHS model specifications (rhs_list),
+  - elastic net mixing parameters (alpha_grid),
+  - a fixed penalty grid (lambda_grid).
+
+Each fitted model estimates per-bin discrete-time hazards
+  P(T in bin_j | T >= bin_j, W)
+under the discrete-time hazard likelihood induced by the long-data
+construction used in dsl_densify.
+
+Spline handling
+
+Natural spline terms may be specified directly in the RHS using ns() or
+splines::ns(), subject to the following restrictions:
+  - Only ns(<symbol>, df = ...) is supported; the first argument must be a
+    bare variable name.
+  - splines::ns() is accepted but internally rewritten to ns().
+  - Knot locations and boundary knots are computed once on the training
+    data within each fold and then frozen.
+
+Frozen spline bases are enforced by evaluating model.matrix() in an
+environment where ns() is replaced by a wrapper that injects the stored
+knot information. This ensures consistent spline bases within each fold
+and between training, validation, and sampling.
+
+Numeric-only requirement
+
+This runner is intended for use with numeric predictors only. All variables
+referenced in rhs_list (including bin_id and all covariates in W) must
+already be numeric. Factors, characters, and ordered factors are not
+supported and are not coerced internally.
+
+Tuning grid and prediction layout
+
+The internal tune_grid is ordered such that RHS varies first, then alpha,
+then lambda (lambda varies fastest). During cross-validation, predict()
+returns an n_long x K matrix of predicted hazards, where
+  K = length(rhs_list) * length(alpha_grid) * length(lambda_grid),
+with columns aligned to tune_grid (and .tune).
+
+Prediction delegates to an internal predict_hazards() helper so that
+prediction and sampling always use identical hazard estimates.
+
+Sampling from the fitted hazard model
+
+The runner provides a sample() method that generates draws
+  A* ~ f_hat(· | W)
+from the implied conditional density under the discrete-time hazard
+representation.
+
+Sampling assumes the fit_bundle contains exactly one fitted model
+(length(fit_bundle$fits) == 1). This is the intended usage after model
+selection, for example via select_fit_tune() or fit_one().
+
+IMPORTANT: The sample() method expects newdata in long hazard format.
+Expansion of wide W to long form (repeating rows across all bins and
+attaching bin_lower and bin_upper) is handled upstream by
+sample.dsldensify(). The runner itself never constructs hazard grids.
+
+For each subject, sampling proceeds by:
+  - predicting hazards h_j for all bins,
+  - computing implied bin masses
+      p_j = h_j * prod_{l < j} (1 - h_l),
+  - normalizing the masses to sum to one,
+  - sampling a bin index according to p_j,
+  - sampling uniformly within the selected bin.
+
+If the total mass is non-finite or non-positive for any subject, a single
+warning is issued and sampling for those subjects falls back to uniform
+sampling over bins.
+
+Lightweight fit objects
+
+When strip_fit = TRUE, each fitted (rhs, alpha) block is reduced to a
+minimal representation sufficient for prediction:
+  - an intercept vector a0 of length length(lambda_grid),
+  - a sparse coefficient matrix beta (Matrix::dgCMatrix), dimensions p x L,
+  - the training column names x_cols.
+
+This saves memory relative to storing full glmnet objects.
 }
-
-## Spline handling
-Spline knots are computed once per fold (inside \code{fit()}) using the
-training data and stored in \code{design_specs}. Prediction uses the stored
-knots to ensure consistent spline bases across training and validation data
-within each fold.
-
-## Interactions
-Interactions between spline terms and other covariates (for example,
-\code{W1 * ns(bin_id, df = 5)}) are supported and handled via
-\code{model.matrix()}. Nested spline constructs are not supported.
-}
-\section{Numeric-only requirement}{
-
-The design matrix is constructed using \code{stats::model.matrix()}.
-To ensure stable feature definitions across folds and avoid factor-level
-bookkeeping, this runner is intended for use with **numeric predictors only**
-(including \code{bin_id} and all covariates in \code{W}). RHS formulas should
-not include factors, characters, or ordered factors. This function does not
-coerce variables to numeric; it assumes inputs are already in numeric form.
-}
-
-\section{Tuning grid and prediction layout}{
-
-The internal \code{tune_grid} is ordered such that:
-\itemize{
-  \item RHS varies first,
-  \item then \code{alpha},
-  \item then \code{lambda}.
-}
-During cross-validation, \code{predict()} returns an
-\code{n_long x K} matrix of predicted hazards, where
-\code{K = length(rhs_list) * length(alpha_grid) * length(lambda_grid)},
-with columns aligned to \code{tune_grid}.
-}
-
-\section{Lightweight fit objects}{
-
-When \code{strip_fit = TRUE}, each fitted \code{(rhs, alpha)} block is reduced
-to a minimal representation sufficient for prediction:
-\itemize{
-  \item an intercept vector \code{a0} of length \code{length(lambda_grid)},
-  \item a sparse coefficient matrix \code{beta}
-        (\code{Matrix::dgCMatrix}, dimensions \code{p x L}),
-  \item the training column names \code{x_cols}.
-}
-This saves memory relative to storing full \code{glmnet} fits
-}
-
 \examples{
 rhs_list <- list(
   ~ W1 + W2 + splines::ns(bin_id, df = 4),
