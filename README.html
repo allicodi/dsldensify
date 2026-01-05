@@ -230,13 +230,33 @@ David Benkeser (Emory University)</p>
 </tr>
 <tr class="odd">
 <td>Direct density</td>
-<td>Gaussian linear model (<code>stats::lm</code>)</td>
+<td>Gaussian linear model, homoskedastic</td>
 <td><code>make_gaussian_homosked_runner()</code></td>
 </tr>
 <tr class="even">
 <td>Direct density</td>
 <td>GAMLSS (<code>gamlss</code>)</td>
 <td><code>make_gamlss_runner()</code></td>
+</tr>
+<tr class="odd">
+<td>Direct density</td>
+<td>Gaussian mixture of experts (EM, optional gating)</td>
+<td><code>make_gmm_runner()</code></td>
+</tr>
+<tr class="even">
+<td>Direct density</td>
+<td>Location–scale model with residual KDE</td>
+<td><code>make_locscale_kde_runner()</code></td>
+</tr>
+<tr class="odd">
+<td>Direct density</td>
+<td>Mixture of location–scale residual KDE experts</td>
+<td><code>make_mix_locscale_kde_runner()</code></td>
+</tr>
+<tr class="even">
+<td>Quantile inversion</td>
+<td>Quantile-function–based density (quantile regression)</td>
+<td><code>make_quantreg_runner()</code></td>
 </tr>
 </tbody>
 </table>

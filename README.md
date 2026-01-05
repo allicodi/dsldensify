@@ -255,14 +255,18 @@ cross-validation. This design allows hazard-based and direct density
 learners to compete under the same cross-validated log-density risk and
 allows for building out additional learners under this same framework.
 
-| Category       | Learner                             | Runner function                   |
-|----------------|-------------------------------------|-----------------------------------|
-| Hazard-based   | Logistic regression (`stats::glm`)  | `make_glm_runner()`               |
-| Hazard-based   | Penalized logistic (`glmnet`)       | `make_glmnet_runner()`            |
-| Hazard-based   | Gradient boosting (`xgboost`)       | `make_xgboost_runner()`           |
-| Hazard-based   | Random forest (`ranger`)            | `make_rf_runner()`                |
-| Direct density | Gaussian linear model (`stats::lm`) | `make_gaussian_homosked_runner()` |
-| Direct density | GAMLSS (`gamlss`)                   | `make_gamlss_runner()`            |
+| Category           | Learner                                               | Runner function                   |
+|--------------------|-------------------------------------------------------|-----------------------------------|
+| Hazard-based       | Logistic regression (`stats::glm`)                    | `make_glm_runner()`               |
+| Hazard-based       | Penalized logistic (`glmnet`)                         | `make_glmnet_runner()`            |
+| Hazard-based       | Gradient boosting (`xgboost`)                         | `make_xgboost_runner()`           |
+| Hazard-based       | Random forest (`ranger`)                              | `make_rf_runner()`                |
+| Direct density     | Gaussian linear model, homoskedastic                  | `make_gaussian_homosked_runner()` |
+| Direct density     | GAMLSS (`gamlss`)                                     | `make_gamlss_runner()`            |
+| Direct density     | Gaussian mixture of experts (EM, optional gating)     | `make_gmm_runner()`               |
+| Direct density     | Location–scale model with residual KDE                | `make_locscale_kde_runner()`      |
+| Direct density     | Mixture of location–scale residual KDE experts        | `make_mix_locscale_kde_runner()`  |
+| Quantile inversion | Quantile-function–based density (quantile regression) | `make_quantreg_runner()`          |
 
 ------------------------------------------------------------------------
 
