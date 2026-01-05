@@ -45,26 +45,52 @@ David Benkeser (Emory University)</p>
 <li>and model selection is performed by <strong>cross-validated negative log-density risk</strong>.</li>
 </ul>
 <p>The project is under active development and should currently be viewed as <strong>research-grade software</strong> rather than a fully stable production library.</p>
-<hr />
-<h2 id="modeling-strategies-supported">Modeling strategies supported</h2>
-<p>At a high level, <code>dsldensify</code> supports <strong>two complementary approaches</strong> to conditional density estimation under a common cross-validation interface.</p>
-<h3 id="1-hazard-based-discretized-density-estimation">1. Hazard-based (discretized) density estimation</h3>
-<p>In this approach, the support of <span class="math inline">\(A\)</span> is discretized into bins, and the conditional density is estimated by modeling <strong>discrete-time hazards</strong>:</p>
-<ul>
-<li><span class="math inline">\(A\)</span> is binned using either equal-range or equal-mass binning.</li>
-<li>Long-format data are constructed with one row per observation–bin pair.</li>
-<li>Binary regression models estimate the hazard of falling into each bin.</li>
-<li>Estimated hazards are converted into a continuous density.</li>
-</ul>
-<p>This strategy allows the use of a wide range of binary learners (e.g., logistic regression, penalized GLMs, random forests, gradient boosting).</p>
-<h3 id="2-direct-conditional-density-models">2. Direct conditional density models</h3>
-<p>Direct models estimate <span class="math inline">\(f(A \mid W)\)</span> without discretization, for example:</p>
-<ul>
-<li>homoskedastic Gaussian regression,</li>
-<li>flexible GAMLSS models with covariate-dependent parameters.</li>
-</ul>
-<p>These models are evaluated using the same cross-validated log-density loss as hazard-based learners and can compete directly with them in model selection.</p>
-<hr />
+<table>
+<tbody>
+<tr class="odd">
+<td>## Modeling strategies supported</td>
+</tr>
+<tr class="even">
+<td>At a high level, <code>dsldensify</code> supports <strong>three complementary approaches</strong> to conditional density estimation under a common cross-validation interface.</td>
+</tr>
+<tr class="odd">
+<td>### 1. Hazard-based (discretized) density estimation</td>
+</tr>
+<tr class="even">
+<td>In this approach, the support of <span class="math inline">\(A\)</span> is discretized into bins, and the conditional density is estimated by modeling <strong>discrete-time hazards</strong>:</td>
+</tr>
+<tr class="odd">
+<td>- <span class="math inline">\(A\)</span> is binned using either equal-range or equal-mass binning. - Long-format data are constructed with one row per observation–bin pair. - Binary regression models estimate the hazard of falling into each bin. - Estimated hazards are converted into a continuous density.</td>
+</tr>
+<tr class="even">
+<td>This strategy allows the use of a wide range of binary learners (e.g., logistic regression, penalized GLMs, random forests, gradient boosting).</td>
+</tr>
+<tr class="odd">
+<td>### 2. Direct conditional density models</td>
+</tr>
+<tr class="even">
+<td>Direct models estimate <span class="math inline">\(f(A \mid W)\)</span> without discretization by specifying a parametric or semi-parametric likelihood for the outcome, for example:</td>
+</tr>
+<tr class="odd">
+<td>- homoskedastic Gaussian regression, - flexible GAMLSS models with covariate-dependent parameters, - mixture-of-experts models with component-specific means and variances.</td>
+</tr>
+<tr class="even">
+<td>### 3. Quantile inversion methods</td>
+</tr>
+<tr class="odd">
+<td>Quantile inversion methods represent the conditional distribution of <span class="math inline">\(A \mid W\)</span> through its conditional quantile function <span class="math inline">\(Q(p \mid W)\)</span>, where <span class="math inline">\(Q(p \mid W)\)</span> denotes the <span class="math inline">\(p\)</span>-th conditional quantile of <span class="math inline">\(A\)</span> given <span class="math inline">\(W\)</span>.</td>
+</tr>
+<tr class="even">
+<td>In this approach:</td>
+</tr>
+<tr class="odd">
+<td>- Conditional quantile functions <span class="math inline">\(Q(p \mid W)\)</span> are estimated on a fixed grid of probability levels <span class="math inline">\(p \in (p_{\min}, p_{\max})\)</span> using quantile regression. - The conditional density is recovered via inversion of the quantile function, using the identity $$</td>
+</tr>
+</tbody>
+</table>
+<p>f(a \mid W) = \left( \frac{d}{dp} Q(p \mid W) \right)^{-1}<br />
+\Bigg|_{p : Q(p \mid W) = a}.<br />
+$$ - Numerical differentiation and smoothing are used to stabilize estimates of the derivative <span class="math inline">\(dQ(p \mid W)/dp\)</span>, and monotonicity of the quantile function. | | For the time being, only parametric quantile regression is supported. |</p>
 <h2 id="installation">Installation</h2>
 <p>The development version of <code>dsldensify</code> can be installed from GitHub:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>remotes<span class="sc">::</span><span class="fu">install_github</span>(<span class="st">&quot;benkeser/dsldensify&quot;</span>)</span></code></pre></div>
