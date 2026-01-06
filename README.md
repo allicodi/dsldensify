@@ -75,10 +75,8 @@ In this approach:
     fixed grid of probability levels $p \in (p_{\min}, p_{\max})$ using
     quantile regression.
 -   The conditional density is recovered via inversion of the quantile
-    function, using the identity $$
-      f(a \mid W) = \left( \frac{d}{dp} Q(p \mid W) \right)^{-1}
-      \Bigg|_{p : Q(p \mid W) = a}.
-    $$
+    function, using the identity
+    $f(a \mid W) = \left( \frac{d}{dp} Q(p \mid W) \right)^{-1}  \Bigg|_{p : Q(p \mid W) = a}.$
 -   Numerical differentiation and smoothing are used to stabilize
     estimates of the derivative $dQ(p \mid W)/dp$, and monotonicity of
     the quantile function.

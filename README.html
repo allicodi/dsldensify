@@ -706,10 +706,9 @@ where <span class="math inline">\(Q(p \mid W)\)</span> denotes the <span class="
 W)\)</span> are estimated on a fixed grid of probability levels <span class="math inline">\(p \in (p_{\min}, p_{\max})\)</span> using quantile
 regression.</li>
 <li>The conditional density is recovered via inversion of the quantile
-function, using the identity <span class="math display">\[
-f(a \mid W) = \left( \frac{d}{dp} Q(p \mid W) \right)^{-1}
-\Bigg|_{p : Q(p \mid W) = a}.
-\]</span></li>
+function, using the identity <span class="math inline">\(f(a \mid W) =
+\left( \frac{d}{dp} Q(p \mid W) \right)^{-1}  \Bigg|_{p : Q(p \mid W) =
+a}.\)</span></li>
 <li>Numerical differentiation and smoothing are used to stabilize
 estimates of the derivative <span class="math inline">\(dQ(p \mid
 W)/dp\)</span>, and monotonicity of the quantile function.</li>
