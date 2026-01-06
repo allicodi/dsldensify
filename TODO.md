@@ -13,3 +13,6 @@
 - [X] Plot methods for main function
 - [X] Print methods for main function
 - [ ] Add warnings if selected hazard model is at edge of n_bins range?
+- [ ] Further validate quantile regression methods via code review
+- [ ] Further validate mixture model wrappers via code review
+- [ ] Add quantile to output summary description (currently will list it as direct learner)

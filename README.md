@@ -28,25 +28,64 @@ The project is under active development and should currently be viewed
 as **research-grade software** rather than a fully stable production
 library.
 
-|                                                                                                                                                                                                                                                                                  |
-|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| ## Modeling strategies supported                                                                                                                                                                                                                                                 |
-| At a high level, `dsldensify` supports **three complementary approaches** to conditional density estimation under a common cross-validation interface.                                                                                                                           |
-| ### 1. Hazard-based (discretized) density estimation                                                                                                                                                                                                                             |
-| In this approach, the support of $A$ is discretized into bins, and the conditional density is estimated by modeling **discrete-time hazards**:                                                                                                                                   |
-| \- $A$ is binned using either equal-range or equal-mass binning. - Long-format data are constructed with one row per observation–bin pair. - Binary regression models estimate the hazard of falling into each bin. - Estimated hazards are converted into a continuous density. |
-| This strategy allows the use of a wide range of binary learners (e.g., logistic regression, penalized GLMs, random forests, gradient boosting).                                                                                                                                  |
-| ### 2. Direct conditional density models                                                                                                                                                                                                                                         |
-| Direct models estimate $f(A \mid W)$ without discretization by specifying a parametric or semi-parametric likelihood for the outcome, for example:                                                                                                                               |
-| \- homoskedastic Gaussian regression, - flexible GAMLSS models with covariate-dependent parameters, - mixture-of-experts models with component-specific means and variances.                                                                                                     |
-| ### 3. Quantile inversion methods                                                                                                                                                                                                                                                |
-| Quantile inversion methods represent the conditional distribution of $A \mid W$ through its conditional quantile function $Q(p \mid W)$, where $Q(p \mid W)$ denotes the $p$-th conditional quantile of $A$ given $W$.                                                           |
-| In this approach:                                                                                                                                                                                                                                                                |
-| \- Conditional quantile functions $Q(p \mid W)$ are estimated on a fixed grid of probability levels $p \in (p_{\min}, p_{\max})$ using quantile regression. - The conditional density is recovered via inversion of the quantile function, using the identity $$                 
- f(a \mid W) = \left( \frac{d}{dp} Q(p \mid W) \right)^{-1}                                                                                                                                                                                                                        
- \Bigg|_{p : Q(p \mid W) = a}.                                                                                                                                                                                                                                                     
- $$ - Numerical differentiation and smoothing are used to stabilize estimates of the derivative $dQ(p \mid W)/dp$, and monotonicity of the quantile function.                                                                                                                      |
-| For the time being, only parametric quantile regression is supported.                                                                                                                                                                                                            |
+------------------------------------------------------------------------
+
+## Modeling strategies supported
+
+At a high level, `dsldensify` supports **three complementary
+approaches** to conditional density estimation under a common
+cross-validation interface.
+
+### 1. Hazard-based (discretized) density estimation
+
+In this approach, the support of $A$ is discretized into bins, and the
+conditional density is estimated by modeling **discrete-time hazards**:
+
+-   $A$ is binned using either equal-range or equal-mass binning.
+-   Long-format data are constructed with one row per observation–bin
+    pair.
+-   Binary regression models estimate the hazard of falling into each
+    bin.
+-   Estimated hazards are converted into a continuous density.
+
+This strategy allows the use of a wide range of binary learners (e.g.,
+logistic regression, penalized GLMs, random forests, gradient boosting).
+
+### 2. Direct conditional density models
+
+Direct models estimate $f(A \mid W)$ without discretization by
+specifying a parametric or semi-parametric likelihood for the outcome,
+for example:
+
+-   homoskedastic Gaussian regression,
+-   flexible GAMLSS models with covariate-dependent parameters,
+-   mixture-of-experts models with component-specific means and
+    variances.
+
+### 3. Quantile inversion methods
+
+Quantile inversion methods represent the conditional distribution of
+$A \mid W$ through its conditional quantile function $Q(p \mid W)$,
+where $Q(p \mid W)$ denotes the $p$-th conditional quantile of $A$ given
+$W$.
+
+In this approach:
+
+-   Conditional quantile functions $Q(p \mid W)$ are estimated on a
+    fixed grid of probability levels $p \in (p_{\min}, p_{\max})$ using
+    quantile regression.
+-   The conditional density is recovered via inversion of the quantile
+    function, using the identity $$
+      f(a \mid W) = \left( \frac{d}{dp} Q(p \mid W) \right)^{-1}
+      \Bigg|_{p : Q(p \mid W) = a}.
+    $$
+-   Numerical differentiation and smoothing are used to stabilize
+    estimates of the derivative $dQ(p \mid W)/dp$, and monotonicity of
+    the quantile function.
+
+For the time being, only parametric quantile regression is supported.
+
+------------------------------------------------------------------------
 
 ## Installation
 
