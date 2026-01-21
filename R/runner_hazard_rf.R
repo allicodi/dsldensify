@@ -282,11 +282,10 @@ make_rf_hazard_runner <- function(
       cols <- fits[[k]]$cols
       df_new <- as.data.frame(newdata[, cols, with = FALSE])
 
-      pr <- ranger::predict(
+      pr <- predict(
         fits[[k]]$model,
         data = df_new,
-        type = "response",
-        ...
+        type = "response"
       )$predictions
 
       if (is.matrix(pr) || is.data.frame(pr)) {
@@ -342,8 +341,7 @@ make_rf_hazard_runner <- function(
           case.weights = case_wts,
           replace = isTRUE(tg$replace),
           sample.fraction = as.numeric(tg$sample_fraction),
-          write.forest = TRUE,
-          ...
+          write.forest = TRUE
         )
 
         fits[[k]] <- list(model = fit_obj, cols = cols, .tune = tg$.tune)
