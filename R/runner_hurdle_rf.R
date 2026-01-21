@@ -1,3 +1,93 @@
+#' Create a random forest runner for hurdle probability modeling
+#'
+#' Constructs a runner (learner adapter) for modeling the hurdle probability
+#' \eqn{\pi(W) = P(A = a_0 \mid W)} using probabilistic random forests via
+#' ranger::ranger(). The runner is compatible with the hurdle workflow in
+#' dsldensify, where the hurdle component is fit on wide data with binary
+#' outcome \code{in_hurdle}.
+#'
+#' Tuning is performed over a grid defined by:
+#'   - multiple RHS feature specifications (rhs_list),
+#'   - node-size parameters (min_node_size_grid),
+#'   - optional feature-subset sizes (mtry_grid),
+#'   - sampling behavior (bootstrap vs subsampling without replacement).
+#'
+#' RHS specifications (column selection only)
+#'
+#' The rhs_list argument defines feature sets by extracting variable names:
+#'   - RHS may be provided as one-sided formulas (for example, ~ W1 + W2),
+#'     or as character strings (for example, "W1 + W2").
+#'   - Each RHS is converted to a formula internally and variable names are
+#'     extracted via all.vars().
+#'   - No transformations or interactions are evaluated; referenced columns
+#'     must already exist in the wide data.
+#'
+#' Numeric-only requirement
+#'
+#' This runner is intended for use with numeric predictors only. All columns
+#' referenced by rhs_list should already be numeric. Factors, characters, and
+#' ordered factors are not supported and should be encoded upstream.
+#'
+#' @param rhs_list A list of RHS specifications, either one-sided formulas
+#'   (for example, ~ W1 + W2) or character strings (for example, "W1 + W2").
+#'
+#' @param mtry_grid Optional integer vector of mtry values to tune over.
+#'   If NULL, mtry is set per fit to floor(sqrt(p)) bounded to [1, p], where p
+#'   is the number of selected features.
+#'
+#' @param min_node_size_grid Integer vector of minimum terminal node sizes
+#'   passed to ranger::ranger(min.node.size = ...).
+#'
+#' @param num_trees Integer number of trees in each forest.
+#'
+#' @param sampling_grid Character vector specifying sampling schemes to include.
+#'   Must be a subset of c("bootstrap", "subsample").
+#'
+#' @param subsample_fraction_grid Numeric vector of sampling fractions used
+#'   only when sampling = "subsample".
+#'
+#' @param use_weights_col Logical. If TRUE and weights_col is present, weights
+#'   are passed to ranger::ranger() via case.weights.
+#'
+#' @param weights_col Name of the weights column in the wide data.
+#'
+#' @param respect_unordered_factors Passed to ranger::ranger().
+#'
+#' @param importance Passed to ranger::ranger().
+#'
+#' @param seed Optional integer seed for deterministic fitting across tuning
+#'   rows (set.seed(seed + .tune)).
+#'
+#' @param ... Additional arguments forwarded to ranger::ranger().
+#'
+#' @return A named list (runner) with the following elements:
+#'   method: Character string "hurdle_rf".
+#'   tune_grid: Data frame describing the tuning grid.
+#'   fit: Function fit(train_set, ...) returning a fit bundle.
+#'   fit_one: Function fit_one(train_set, tune, ...) fitting only the selected
+#'     tuning index.
+#'   logpi: Function logpi(fit_bundle, newdata, ...) returning log probabilities.
+#'   log_density: Function log_density(fit_bundle, newdata, ...) returning
+#'     Bernoulli negative log-likelihoods.
+#'   sample: Function sample(fit_bundle, newdata, n_samp, ...) drawing hurdle
+#'     indicators (assumes K = 1).
+#'
+#' Data requirements
+#'
+#' The runner expects train_set and newdata as wide data containing:
+#'   - a binary outcome column in_hurdle,
+#'   - covariates referenced in rhs_list,
+#'   - an optional weight column wts (or weights_col).
+#'
+#' @examples
+#' rhs_list <- list(~ W1 + W2)
+#'
+#' runner <- make_rf_hurdle_runner(
+#'   rhs_list = rhs_list,
+#'   min_node_size_grid = c(5L, 20L)
+#' )
+#'
+#' @export
 make_rf_hurdle_runner <- function(
   rhs_list,
   mtry_grid = NULL,

@@ -1,3 +1,113 @@
+#' Create an xgboost runner for hurdle probability modeling
+#'
+#' Constructs a runner (learner adapter) for modeling the hurdle probability
+#' \eqn{\pi(W) = P(A = a_0 \mid W)} using gradient boosting via
+#' xgboost::xgboost(). The runner is compatible with the hurdle workflow in
+#' dsldensify, where the hurdle component is fit on wide data with binary
+#' outcome \code{in_hurdle}.
+#'
+#' Tuning grid
+#'
+#' Tuning is performed over a grid defined by:
+#'   - rhs_list (RHS varies slowest),
+#'   - tree depth, learning rate, and regularization parameters,
+#'   - subsampling and column subsampling parameters.
+#'
+#' Numeric-only requirement
+#'
+#' This runner is intended for use with numeric predictors only. All columns
+#' referenced by rhs_list must already be numeric. Factors, characters, and
+#' ordered factors are not supported and should be encoded upstream.
+#'
+#' Early stopping
+#'
+#' If early_stopping_rounds is provided, an internal validation split is
+#' created within each fold. When valid_by_id is TRUE, the split is performed
+#' by id_col; otherwise it is performed at the row level.
+#'
+#' @param rhs_list A list of RHS specifications, either one-sided formulas
+#'   (for example, ~ W1 + W2) or character strings (for example, "W1 + W2").
+#'
+#' @param max_depth_grid Integer vector of maximum tree depths.
+#'
+#' @param eta_grid Numeric vector of learning rates.
+#'
+#' @param min_child_weight_grid Numeric vector of minimum child weights.
+#'
+#' @param subsample_grid Numeric vector of subsample proportions.
+#'
+#' @param colsample_bytree_grid Numeric vector of column subsample proportions.
+#'
+#' @param gamma_grid Numeric vector of minimum loss reduction.
+#'
+#' @param reg_lambda_grid Numeric vector of L2 regularization strengths.
+#'
+#' @param reg_alpha_grid Numeric vector of L1 regularization strengths.
+#'
+#' @param nrounds_max Integer maximum number of boosting rounds.
+#'
+#' @param early_stopping_rounds Integer number of early-stopping rounds; set to
+#'   NULL to disable early stopping.
+#'
+#' @param valid_frac Fraction of observations (or ids) used for validation when
+#'   early stopping is enabled.
+#'
+#' @param valid_by_id Logical. If TRUE, validation split is made by id_col.
+#'
+#' @param id_col Column name used when valid_by_id = TRUE.
+#'
+#' @param use_weights_col Logical. If TRUE and weights_col is present, weights
+#'   are passed to xgboost::xgboost() via the weight argument.
+#'
+#' @param weights_col Name of the weights column in the wide data.
+#'
+#' @param objective Objective passed to xgboost::xgboost() (defaults to
+#'   binary:logistic).
+#'
+#' @param eval_metric Evaluation metric passed to xgboost::xgboost().
+#'
+#' @param verbose Verbosity level for xgboost::xgboost().
+#'
+#' @param nthread Number of threads used by xgboost::xgboost().
+#'
+#' @param eps Numeric stability parameter for clipping probabilities.
+#'
+#' @param strip_fit Logical. If TRUE, attempt to reduce stored fit size.
+#'
+#' @param strip_method Method for stripping fit objects.
+#'
+#' @param seed Optional integer seed for deterministic fitting across tuning
+#'   rows.
+#'
+#' @return A named list (runner) with the following elements:
+#'   method: Character string "hurdle_xgboost".
+#'   tune_grid: Data frame describing the tuning grid.
+#'   fit: Function fit(train_set, ...) returning a fit bundle.
+#'   fit_one: Function fit_one(train_set, tune, ...) fitting only the selected
+#'     tuning index.
+#'   logpi: Function logpi(fit_bundle, newdata, ...) returning log probabilities.
+#'   log_density: Function log_density(fit_bundle, newdata, ...) returning
+#'     Bernoulli negative log-likelihoods.
+#'   sample: Function sample(fit_bundle, newdata, n_samp, ...) drawing hurdle
+#'     indicators (assumes K = 1).
+#'
+#' Data requirements
+#'
+#' The runner expects train_set and newdata as wide data containing:
+#'   - a binary outcome column in_hurdle,
+#'   - covariates referenced in rhs_list,
+#'   - an optional weight column wts (or weights_col).
+#'
+#' @examples
+#' rhs_list <- list(~ W1 + W2)
+#'
+#' runner <- make_xgboost_hurdle_runner(
+#'   rhs_list = rhs_list,
+#'   max_depth_grid = c(2L, 4L),
+#'   eta_grid = c(0.05, 0.1)
+#' )
+#'
+#' @export
 make_xgboost_hurdle_runner <- function(
   rhs_list,
 
