@@ -54,7 +54,7 @@
 #' }
 #'
 #' @export
-make_lognormal_homosked_pos_runner <- function(
+make_lognormal_homosced_pos_runner <- function(
   rhs_list,
   use_weights_col = TRUE,
   strip_fit = TRUE

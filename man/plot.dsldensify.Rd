@@ -8,7 +8,7 @@
   x,
   W_grid,
   n_A = 200L,
-  A_range = x$A_range,
+  A_range = NULL,
   type = c("full", "cv"),
   cv_fold = NULL,
   mode = c("conditional", "marginal"),

@@ -7,8 +7,8 @@
 dsldensify(
   A,
   W,
-  hazard_learners,
-  direct_learners,
+  hazard_learners = NULL,
+  direct_learners = NULL,
   hurdle_learners = NULL,
   hurdle_point = 0,
   wts = rep(1, length(A)),
