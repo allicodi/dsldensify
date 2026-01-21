@@ -449,7 +449,8 @@ make_xgboost_runner <- function(
   list(
     method = "xgboost",
     tune_grid = tune_grid,
-
+    positive_support = TRUE,
+    
     fit = function(train_set, ...) {
       if (!data.table::is.data.table(train_set)) stop("train_set must be a data.table.")
 

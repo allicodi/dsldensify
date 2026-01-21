@@ -109,7 +109,7 @@
 #' )
 #'
 #' @export
-make_bounded_gamlss_runner <- function(
+make_bounded_gamlss_direct_runner <- function(
   mu_rhs_list,
   sigma_rhs_list = c("1"),
   lower,
@@ -327,7 +327,8 @@ make_bounded_gamlss_runner <- function(
   list(
     method = "gamlss_beta",
     tune_grid = tune_grid,
-
+    positive_support = (lower == 0 & upper > 0),
+    
     fit = function(train_set, ...) {
       has_wts <- use_weights_col && ("wts" %in% names(train_set))
       wts_vec <- if (has_wts) as.numeric(train_set$wts) else NULL

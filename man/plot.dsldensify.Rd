@@ -8,7 +8,7 @@
   x,
   W_grid,
   n_A = 200L,
-  A_range = NULL,
+  A_range = x$A_range,
   type = c("full", "cv"),
   cv_fold = NULL,
   mode = c("conditional", "marginal"),
@@ -21,6 +21,11 @@
   legend = TRUE,
   legend_pos = "topright",
   add = FALSE,
+  component = c("auto", "combined", "hurdle", "positive"),
+  annotate = TRUE,
+  atom_lty = 1,
+  atom_scale = c("auto", "fixed"),
+  atom_scale_fixed = NULL,
   predict_args = list(),
   plot_args = list()
 )

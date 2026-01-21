@@ -209,7 +209,7 @@
 #'
 #' @export
 
-make_mix_locscale_kde_runner <- function(
+make_mix_locscale_kde_direct_runner <- function(
   rhs_list,
   K_grid = c(1L, 2L, 3L),
   gate_grid = c("const", "glm"),
@@ -563,7 +563,8 @@ make_mix_locscale_kde_runner <- function(
   list(
     method = "mix_locscale_kde",
     tune_grid = tune_grid,
-
+    positive_support = FALSE, 
+    
     fit = function(train_set, ...) {
       if (!is.null(seed)) set.seed(seed)
 

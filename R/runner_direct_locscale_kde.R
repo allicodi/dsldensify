@@ -229,7 +229,7 @@
 #'
 #' @export
 
-make_locscale_kde_runner <- function(
+make_locscale_kde_direct_runner <- function(
   rhs_list,
 
   # mean model candidates
@@ -613,7 +613,8 @@ make_locscale_kde_runner <- function(
   list(
     method = "locscale_kde",
     tune_grid = tune_grid,
-
+    positive_support = FALSE,
+    
     fit = function(train_set, ...) {
       train_df <- as.data.frame(train_set)
       if (!("A" %in% names(train_df))) stop("train_set must contain column 'A'.")

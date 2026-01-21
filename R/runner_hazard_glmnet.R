@@ -151,7 +151,7 @@
 #' )
 #'
 #' @export
-make_glmnet_runner <- function(
+make_glmnet_hazard_runner <- function(
   rhs_list,
   alpha_grid,
   lambda_grid,
@@ -181,13 +181,14 @@ make_glmnet_runner <- function(
 
   # Tune grid order: rhs major, then alpha, then lambda (lambda varies fastest)
   tune_grid <- expand.grid(
-    rhs = rhs_chr,
-    alpha = alpha_grid,
     lambda = lambda_grid,
+    alpha  = alpha_grid,
+    rhs    = rhs_chr,
     KEEP.OUT.ATTRS = FALSE,
     stringsAsFactors = FALSE
   )
   tune_grid$.tune <- seq_len(nrow(tune_grid))
+  tune_grid <- tune_grid[, c(".tune", "rhs", "alpha", "lambda")]
 
   # ---- hazard conventions (match dsldensify + other hazard runners) -------
   id_col <- "obs_id"
@@ -351,7 +352,7 @@ make_glmnet_runner <- function(
     if (!data.table::is.data.table(newdata)) stop("newdata must be a data.table.")
     if (is.null(fit_bundle$fits) || !length(fit_bundle$fits)) stop("fit_bundle does not contain fits.")
 
-    nd <- data.table::as.data.frame(newdata)
+    nd <- as.data.frame(newdata)
     n <- nrow(nd)
 
     # Selected model bundle: fits is a flat list of length 1
@@ -368,7 +369,8 @@ make_glmnet_runner <- function(
 
       if (inherits(fit1, "glmnet")) {
         s <- fit_bundle$lambda_grid
-        p <- as.matrix(glmnet::predict.glmnet(fit1, newx = Xn, type = "response", s = s, ...))
+        eta <- as.matrix(glmnet::predict.glmnet(fit1, newx = Xn, s = s, ...))
+        p <- plogis(eta)
         return(matrix(clip01(p[, 1L]), nrow = n, ncol = 1L))
       }
 
@@ -390,9 +392,10 @@ make_glmnet_runner <- function(
         if (inherits(fit_ra, "glmnet_stripped")) {
           pmat <- predict_stripped_block(fit_ra, Xn)  # n x L
         } else if (inherits(fit_ra, "glmnet")) {
-          pmat <- as.matrix(glmnet::predict.glmnet(
-            fit_ra, newx = Xn, type = "response", s = fit_bundle$lambda_grid, ...
-          ))  # n x L
+          etamat <- as.matrix(glmnet::predict.glmnet(
+            fit_ra, newx = Xn, s = fit_bundle$lambda_grid, ...
+          ))
+          pmat <- plogis(etamat)  # n x L
         } else {
           stop("Unexpected fit object for glmnet runner: class = ", paste(class(fit_ra), collapse = ", "))
         }
@@ -411,7 +414,8 @@ make_glmnet_runner <- function(
   list(
     method = "glmnet",
     tune_grid = tune_grid,
-
+    positive_support = TRUE,
+    
     fit = function(train_set, ...) {
       if (!("in_bin" %in% names(train_set))) stop("train_set must contain column 'in_bin'.")
       has_wts <- use_weights_col && ("wts" %in% names(train_set))

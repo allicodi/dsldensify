@@ -141,7 +141,7 @@
 #'
 #' @export
 
-make_glm_runner <- function(
+make_glm_hazard_runner <- function(
   rhs_list,
   use_weights_col = TRUE,
   strip_fit = TRUE,
@@ -260,18 +260,21 @@ make_glm_runner <- function(
     env <- make_ns_env(specs, parent_env = environment(f))
     environment(f) <- env
 
-    tt <- stats::terms(f, data = train_set)
-    X <- stats::model.matrix(tt, data = train_set)
+    tt_full <- stats::terms(f, data = train_set)
+    tt_x    <- stats::delete.response(tt_full)
+
+    # training X should also be built from tt_x (same columns, avoids carrying response forward)
+    X <- stats::model.matrix(tt_x, data = train_set)
 
     list(
       X = X,
-      terms = tt,
+      terms = tt_x,
       design_spec = list(rhs = rhs, specs = specs, x_cols = colnames(X))
     )
   }
 
   build_design_new <- function(design_spec, newdata) {
-    f <- stats::as.formula(paste0("in_bin ~ ", design_spec$rhs))
+    f <- stats::as.formula(paste0("~ ", design_spec$rhs))
 
     env <- make_ns_env(design_spec$specs, parent_env = environment(f))
     environment(f) <- env
@@ -287,6 +290,7 @@ make_glm_runner <- function(
     Xn <- Xn[, x_cols, drop = FALSE]
     Xn
   }
+
 
   # --- fit storage + prediction helpers -----------------------------------
 
@@ -320,10 +324,39 @@ make_glm_runner <- function(
     coefs[x_cols]
   }
 
-  predict_from_coef <- function(coefs, linkinv, Xnew) {
-    eta <- as.numeric(Xnew %*% coefs)
-    as.numeric(linkinv(eta))
+  predict_from_coef <- function(coefficients, linkinv, Xnew) {
+    if (is.null(names(coefficients))) {
+      stop("coefficients must be a named numeric vector (names should match training X colnames).")
+    }
+
+    # Treat rank-deficient coefficients as 0 contribution
+    coefs <- coefficients
+    coefs[is.na(coefs)] <- 0
+
+    Xnew <- as.matrix(Xnew)
+    cn <- colnames(Xnew)
+    if (is.null(cn)) stop("Xnew must have colnames to align with coefficients.")
+
+    # Ensure Xnew has exactly the coef columns, in the same order
+    need <- names(coefs)
+
+    # Add missing columns in Xnew (should be rare, but safe)
+    miss <- setdiff(need, cn)
+    if (length(miss) > 0L) {
+      Z <- matrix(0, nrow = nrow(Xnew), ncol = length(miss))
+      colnames(Z) <- miss
+      Xnew <- cbind(Xnew, Z)
+      cn <- colnames(Xnew)
+    }
+
+    # Drop any extra columns not in coefficients
+    keep <- intersect(cn, need)
+    Xnew <- Xnew[, need, drop = FALSE]  # reorder + subset to coef names
+
+    eta <- as.numeric(Xnew %*% as.numeric(coefs))
+    linkinv(eta)
   }
+
 
   # predict hazards for K fits (like xgboost::predict_hazards)
   predict_hazards <- function(fit_bundle, newdata, ...) {
@@ -350,7 +383,7 @@ make_glm_runner <- function(
       ds <- fit_bundle$design_specs[[rhs_raw]]
       if (is.null(ds)) stop("Missing design_specs for RHS: ", rhs_raw)
 
-      Xn <- build_design_new(ds, data.table::as.data.frame(newdata))
+      Xn <- build_design_new(ds, as.data.frame(newdata))
       fit_k <- fits[[k]]
 
       p <- if (inherits(fit_k, "glm_stripped")) {
@@ -372,7 +405,7 @@ make_glm_runner <- function(
   list(
     method = "glm",
     tune_grid = tune_grid,
-
+    positive_support = TRUE,
     fit = function(train_set, ...) {
       if (!("in_bin" %in% names(train_set))) stop("train_set must contain column 'in_bin'.")
 
