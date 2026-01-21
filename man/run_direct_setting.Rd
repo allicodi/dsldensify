@@ -10,6 +10,7 @@ run_direct_setting(
   wts,
   cv_folds_id,
   id_fold,
+  ids_full = NULL,
   learners,
   return_fits = TRUE,
   return_density = FALSE,

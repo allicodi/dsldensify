@@ -179,7 +179,7 @@
 #' )
 #'
 #' @export
-make_rf_runner <- function(
+make_rf_hazard_runner <- function(
   rhs_list,
   mtry_grid = NULL,
   min_node_size_grid = c(5L, 20L, 50L),
@@ -282,11 +282,10 @@ make_rf_runner <- function(
       cols <- fits[[k]]$cols
       df_new <- as.data.frame(newdata[, cols, with = FALSE])
 
-      pr <- ranger::predict(
+      pr <- predict(
         fits[[k]]$model,
         data = df_new,
-        type = "response",
-        ...
+        type = "response"
       )$predictions
 
       if (is.matrix(pr) || is.data.frame(pr)) {
@@ -303,7 +302,8 @@ make_rf_runner <- function(
   list(
     method = "rf",
     tune_grid = tune_grid,
-
+    positive_support = TRUE,
+    
     fit = function(train_set, ...) {
       if (!data.table::is.data.table(train_set)) stop("train_set must be a data.table")
       if (!(outcome_col %in% names(train_set))) stop("Missing outcome_col in train_set")
@@ -341,8 +341,7 @@ make_rf_runner <- function(
           case.weights = case_wts,
           replace = isTRUE(tg$replace),
           sample.fraction = as.numeric(tg$sample_fraction),
-          write.forest = TRUE,
-          ...
+          write.forest = TRUE
         )
 
         fits[[k]] <- list(model = fit_obj, cols = cols, .tune = tg$.tune)

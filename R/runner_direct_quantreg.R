@@ -105,7 +105,7 @@
 #' )
 #'
 #' @export
-make_quantreg_runner <- function(
+make_quantreg_direct_runner <- function(
   rhs_list,
   n_quantiles_grid = c(50L, 100L),
   p_min = 0.01,
@@ -328,7 +328,8 @@ make_quantreg_runner <- function(
   list(
     method = "quantile",
     tune_grid = tune_grid,
-
+    positive_support = TRUE,
+    
     fit = function(train_set, ...) {
       if (!("A" %in% names(train_set))) stop("train_set must contain column 'A'.")
 

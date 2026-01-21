@@ -11,13 +11,16 @@
   type = c("full", "cv"),
   fold_id = NULL,
   seed = NULL,
+  .ignore_hurdle = FALSE,
   ...
 )
 }
 \arguments{
 \item{object}{A fitted \code{dsldensify} object.}
 
-\item{W}{A data.frame/data.table of covariates at which to sample.}
+\item{W}{A \code{data.frame}, \code{data.table}, matrix, or vector of
+covariates at which to sample. Each row corresponds to one conditioning
+covariate value \eqn{W_i}.}
 
 \item{n_samp}{Integer number of draws per row of \code{W}.}
 
@@ -26,33 +29,50 @@
 
 \item{fold_id}{Optional integer vector of fold assignments used when
 \code{type = "cv"}. Must have length \code{nrow(W)} and take values in
-\code{1, ..., V}, where \code{V = length(object$cv_fit)}. Each entry indicates
-which fold-specific fit should be used for the corresponding observation.}
+\code{1, \dots, V}, where \eqn{V} is the number of folds. Each entry
+indicates which fold-specific fit should be used for the corresponding row.
+In hurdle mode, the same \code{fold_id} is used for both the hurdle
+component and the positive-part component.}
 
 \item{seed}{Optional integer seed passed to \code{set.seed()} before sampling.}
 
-\item{...}{Passed through to the underlying runner \code{sample()} method.}
+\item{.ignore_hurdle}{Logical. Internal flag used to bypass hurdle composition
+logic when recursively sampling from the positive-part component. Users
+should not set this argument directly.}
+
+\item{...}{Passed through to the underlying runner \code{sample()} method and,
+in hurdle mode, to the hurdle runner's \code{logpi()} method.}
 }
 \value{
 A numeric matrix of dimension \code{nrow(W) x n_samp}.
 }
 \description{
-Draws samples \eqn{A^* \sim \hat f(\cdot \mid W)} from a fitted \code{dsldensify}
-object.
+Draws samples \eqn{A^* \sim \hat f(\cdot \mid W)} from a fitted
+\code{dsldensify} object.
 
-For a **hazard-based** winner, this method constructs the required **long**
-hazard grid internally (by repeating each row of \code{W} over all bins) using
-the chosen grid stored in \code{object}:
-\itemize{
-  \item \code{object$breaks} and \code{object$bin_length} are used to create
-        \code{breaks_full},
-  \item \code{bin_id} is \code{1, ..., object$n_bins},
-  \item \code{bin_lower} and \code{bin_upper} are attached per \code{bin_id}.
+If the selected model is hazard-based, this method constructs the required
+long-format hazard grid internally (by repeating each row of \code{W} over all
+bins) using the bin definitions stored in \code{object}. It then delegates to
+the hazard runner's \code{sample()} method, which assumes a selected fit
+(\eqn{K = 1}) and samples via bin mass and within-bin uniform draws.
+
+If the selected model is direct, this method delegates directly to the
+runner's \code{sample()} method on wide \code{W}.
+
+If the fitted object was obtained in hurdle mode
+(\code{object$is_hurdle == TRUE}), this method draws samples from a two-part
+model with a point mass at \code{object$hurdle_point} and a positive-part
+conditional density for \code{A != hurdle_point}. In hurdle mode, the hurdle
+probabilities are obtained from the selected hurdle learner and the
+positive-part samples are obtained from the selected hazard-based or direct
+density learner fit on \code{A != hurdle_point}.
 }
-It then delegates to the hazard runner's \code{sample()} method, which assumes
-\code{K = 1} (selected fit) and samples via bin-mass + within-bin uniform draws.
+\details{
+For hazard-based winners, the method constructs a long-format prediction grid
+with one row per observation--bin pair. The grid includes \code{obs_id},
+\code{bin_id}, and bin endpoints \code{bin_lower} and \code{bin_upper}, as
+well as the covariates \code{W}. The hazard runner's \code{sample()} method is
+then called on this long data and returns draws for each \code{obs_id}.
 
-For a **direct-density** winner (identified by \code{object$grid_type == "direct"}),
-this method delegates directly to the runner's \code{sample()} method on wide
-\code{W}.
+In hurdle mode, samples are drawn from the two-part mixture distribution.
 }

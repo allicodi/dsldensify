@@ -85,6 +85,20 @@ For the time being, only parametric quantile regression is supported.
 
 ------------------------------------------------------------------------
 
+## Hurdle Models
+
+Hurdle models combine a point-mass learner for
+$\pi(W) = P(A = 0 \mid W)$ with a positive-part density for $A > 0$. The
+conditional distribution of $A$ is modeled as a two-part mixture:
+$f(a \mid W = w) = \pi(w)\,\mathbb{I}\{a = a_0\} + \left\{1 - \pi(w)\right\} f_+(a \mid w)\,\mathbb{I}\{a \ne a_0\} \ .$
+
+If hurdle learners are specified for $\pi$, the function then uses the
+supplied direct and/or hazard learners for the positive-part density
+estimation. Direct density learners inputted in this way should respect
+the requirement for positive bounds.
+
+------------------------------------------------------------------------
+
 ## Installation
 
 The development version of `dsldensify` can be installed from GitHub:
@@ -136,9 +150,9 @@ hazard_learners <- list(
 )
 
 # define Gaussian linear model direct density learner
-# see ?make_gaussian_homosked_runner for details
+# see ?make_gaussian_homosced_direct_runner for details
 direct_learners <- list(
-  gaussian = make_gaussian_homosked_runner(
+  gaussian = make_gaussian_homosced_direct_runner(
     rhs_list = list(~ x1 + x2)
   )
 )
@@ -154,25 +168,21 @@ fit <- dsldensify(
 )
 
 fit
-#> 
 #> dsldensify fit
-#> ----------------------------------------
-#> Selected learner:
-#>   • learner   : gaussian 
-#>   • type      : direct density
-#>   • CV risk   : 1.497 
+#>   grid_type:  direct
+#>   learner:    gaussian
+#>   best_tune:  1
+#>   is_direct:  TRUE
 #> 
-#> Tuning parameters (selected):
-#>   • rhs : x1 + x2 
+#>   tune_row:
+#>  .tune     rhs
+#>      1 x1 + x2
 #> 
-#> Fitting details:
-#>   • CV folds stored : FALSE 
-#>   • Full refit      : TRUE 
+#>   fits:
+#>     full_fit: present
+#>     cv_fit:   NULL/empty
 #> 
-#> Prediction:
-#>   • predict(type = "full") available : TRUE 
-#>   • predict(type = "cv")   available : FALSE 
-#> ----------------------------------------
+#> 3-fold CV risk:    1.49741
 ```
 
 ------------------------------------------------------------------------
@@ -267,6 +277,72 @@ documentation for details.
 
 ------------------------------------------------------------------------
 
+## Hurdle model example
+
+In this example, we illustrate a simple hurdle model.
+
+``` r
+set.seed(2)
+
+n_h <- 300
+W_h <- data.table(
+  x1 = rnorm(n_h),
+  x2 = rnorm(n_h)
+)
+
+p_zero <- plogis(-0.5 + 0.8 * W_h$x1 - 0.4 * W_h$x2)
+is_zero <- rbinom(n_h, size = 1, prob = p_zero)
+A_pos <- exp(0.5 + 0.6 * W_h$x1 - 0.2 * W_h$x2 + rnorm(n_h, sd = 0.4))
+A_h <- ifelse(is_zero == 1, 0, A_pos)
+
+hurdle_learners <- list(
+  glm = make_glm_hurdle_runner(
+    rhs_list = list(~ x1 + x2)
+  )
+)
+
+positive_learners <- list(
+  lognormal = make_lognormal_homosked_pos_runner(
+    rhs_list = list(~ x1 + x2)
+  )
+)
+
+fit_hurdle <- dsldensify(
+  A = A_h,
+  W = W_h,
+  hurdle_learners = hurdle_learners,
+  direct_learners = positive_learners,
+  cv_folds = 3
+)
+```
+
+``` r
+W_h_grid <- data.table(
+  x1 = 0,
+  x2 = 0
+)
+
+op <- par(mfrow = c(1, 2))
+plot(
+  fit_hurdle,
+  W_h_grid,
+  mode = "conditional",
+  component = "hurdle",
+  main = "Hurdle model"
+)
+plot(
+  fit_hurdle,
+  W_h_grid,
+  mode = "conditional",
+  component = "positive",
+  main = "Positive-part density"
+)
+```
+
+<img src="README-example-hurdle-plot-1.png" width="100%" />
+
+------------------------------------------------------------------------
+
 ## Supported learners
 
 All estimators in `dsldensify` are implemented as **runners**: adapters
@@ -275,18 +351,42 @@ cross-validation. This design allows hazard-based and direct density
 learners to compete under the same cross-validated log-density risk and
 allows for building out additional learners under this same framework.
 
-| Category           | Learner                                               | Runner function                   |
-|--------------------|-------------------------------------------------------|-----------------------------------|
-| Hazard-based       | Logistic regression (`stats::glm`)                    | `make_glm_runner()`               |
-| Hazard-based       | Penalized logistic (`glmnet`)                         | `make_glmnet_runner()`            |
-| Hazard-based       | Gradient boosting (`xgboost`)                         | `make_xgboost_runner()`           |
-| Hazard-based       | Random forest (`ranger`)                              | `make_rf_runner()`                |
-| Direct density     | Gaussian linear model, homoskedastic                  | `make_gaussian_homosked_runner()` |
-| Direct density     | GAMLSS (`gamlss`)                                     | `make_gamlss_runner()`            |
-| Direct density     | Gaussian mixture of experts (EM, optional gating)     | `make_gmm_runner()`               |
-| Direct density     | Location–scale model with residual KDE                | `make_locscale_kde_runner()`      |
-| Direct density     | Mixture of location–scale residual KDE experts        | `make_mix_locscale_kde_runner()`  |
-| Quantile inversion | Quantile-function–based density (quantile regression) | `make_quantreg_runner()`          |
+### Hazard-based learners
+
+| Learner                            | Runner function               |
+|------------------------------------|-------------------------------|
+| Logistic regression (`stats::glm`) | `make_glm_hazard_runner()`    |
+| Penalized logistic (`glmnet`)      | `make_glmnet_hazard_runner()` |
+| Gradient boosting (`xgboost`)      | `make_xgboost_runner()`       |
+| Random forest (`ranger`)           | `make_rf_hazard_runner()`     |
+
+### Direct density learners
+
+| Learner                                               | Runner function                          |
+|-------------------------------------------------------|------------------------------------------|
+| Gaussian linear model, homoskedastic                  | `make_gaussian_homosced_direct_runner()` |
+| GAMLSS (`gamlss`)                                     | `make_gamlss_direct_runner()`            |
+| Bounded GAMLSS (`gamlss`)                             | `make_bounded_gamlss_direct_runner()`    |
+| Gaussian mixture of experts (EM, optional gating)     | `make_gmm_direct_runner()`               |
+| Location–scale model with residual KDE                | `make_locscale_kde_direct_runner()`      |
+| Mixture of location–scale residual KDE experts        | `make_mix_locscale_kde_direct_runner()`  |
+| Quantile-function–based density (quantile regression) | `make_quantreg_direct_runner()`          |
+
+### Positive-part learners
+
+| Learner                               | Runner function                        |
+|---------------------------------------|----------------------------------------|
+| Gamma GLM with log link               | `make_gamma_glm_log_pos_runner()`      |
+| Log-normal homoskedastic direct model | `make_lognormal_homosked_pos_runner()` |
+
+### Hurdle learners
+
+| Learner                            | Runner function                |
+|------------------------------------|--------------------------------|
+| Logistic regression (`stats::glm`) | `make_glm_hurdle_runner()`     |
+| Penalized logistic (`glmnet`)      | `make_glmnet_hurdle_runner()`  |
+| Random forest (`ranger`)           | `make_rf_hurdle_runner()`      |
+| Gradient boosting (`xgboost`)      | `make_xgboost_hurdle_runner()` |
 
 ------------------------------------------------------------------------
 

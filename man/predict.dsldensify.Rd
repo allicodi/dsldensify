@@ -12,27 +12,28 @@
   fold_id = NULL,
   trim_predict = TRUE,
   eps = 1e-12,
+  .ignore_hurdle = FALSE,
   ...
 )
 }
 \arguments{
-\item{object}{Fitted \code{"dsldensify"} object returned by \code{dsldensify()}.}
+\item{object}{Fitted \code{"dsldensify"} object returned by
+\code{dsldensify()}.}
 
 \item{A}{Numeric vector of values at which to evaluate the conditional density.
-Must have the same length as \code{W} (number of rows).}
+Must have the same length as \code{W}.}
 
 \item{W}{Covariate values at which to condition the density. May be a vector,
-matrix, \code{data.frame}, or \code{data.table}. If \code{W} has multiple
-rows, a density value is returned for each row paired with the corresponding
-element of \code{A}.}
+matrix, \code{data.frame}, or \code{data.table}. Each row of \code{W} is
+paired with the corresponding element of \code{A}.}
 
-\item{type}{Character string indicating which fitted object to use:
+\item{type}{Character string indicating which fitted object to use.
 \code{"full"} uses the full-data refit stored in \code{object$full_fit};
 \code{"cv"} uses fold-specific fits stored in \code{object$cv_fit}.}
 
 \item{fold_id}{Optional integer vector of fold assignments used when
 \code{type = "cv"}. Must have length \code{length(A)} and take values in
-\code{1, ..., V}, where \code{V = length(object$cv_fit)}. Each entry indicates
+\code{1, \dots, V}, where \eqn{V} is the number of folds. Each entry indicates
 which fold-specific fit should be used for the corresponding observation.}
 
 \item{trim_predict}{Logical. When the selected model is hazard-based and
@@ -42,11 +43,17 @@ returning exactly zero density due to extrapolation beyond the bin range.}
 
 \item{eps}{Small positive constant used to bound probabilities and densities
 away from zero during computation. For direct learners, it is passed to the
-runner's \code{log_density} method when supported.}
+runner's \code{log_density()} method when supported. In hurdle mode, it is
+also used to stabilize the hurdle probability estimates.}
+
+\item{.ignore_hurdle}{Logical. Internal flag used to bypass hurdle composition
+logic when recursively evaluating the positive-part density. Users should
+not set this argument directly.}
 
 \item{...}{Additional arguments passed to the selected learner runner's
-prediction methods (\code{predict} for hazard learners; \code{log_density}
-for direct learners).}
+prediction methods (\code{predict()} for hazard learners;
+\code{log_density()} for direct learners; and \code{logpi()} for hurdle
+learners).}
 }
 \value{
 A numeric vector of length \code{length(A)} containing estimated
@@ -65,6 +72,14 @@ selected model is a hazard-based learner, new data are expanded to long-format
 hazards using the stored bin definitions; predicted hazards are converted to
 bin probabilities and then to a continuous density by dividing by bin widths.
 
+If the fitted object was obtained in hurdle mode
+(\code{object$is_hurdle == TRUE}), this method returns the density from a
+two-part model with a point mass at \code{object$hurdle_point} and a
+positive-part conditional density for \code{A != hurdle_point}. In hurdle mode,
+the hurdle probability is obtained from the selected hurdle learner and the
+positive-part density is obtained from the selected hazard-based or direct
+density learner fit on \code{A != hurdle_point}.
+
 
 For hazard-based models, let \eqn{\lambda_j(w)} denote the discrete hazard of
 falling in bin \eqn{j} given \eqn{W = w}, and let \eqn{\Delta_j} denote the
@@ -81,10 +96,25 @@ using \code{object$breaks} and \code{object$bin_length}, obtains hazard
 predictions from the selected runner, converts them to bin mass, and then
 scales by the bin widths.
 
+In hurdle mode, the conditional distribution of \code{A} is modeled as a
+two-part mixture with a point mass at \eqn{a_0 = \code{hurdle_point}}:
+\deqn{
+  f(a \mid w) =
+  \pi(w)\,\mathbb{I}\{a = a_0\} +
+  \left\{1 - \pi(w)\right\} f_+(a \mid w)\,\mathbb{I}\{a \ne a_0\},
+}
+where \eqn{\pi(w) = P(A = a_0 \mid W = w)} is estimated by the selected hurdle
+learner (via its \code{logpi()} method), and \eqn{f_+(a \mid w)} is the
+selected positive-part density fit on observations with \code{A != a_0}. This
+method evaluates \eqn{\pi(w)} on the requested covariates, then evaluates the
+positive-part density by recursively calling \code{predict.dsldensify()} with
+\code{.ignore_hurdle = TRUE}, and finally composes the two components into the
+overall density.
+
 When \code{type = "cv"}, predictions are computed using the fold-specific fit
-indexed by \code{fold_id}. This is useful for cross-fitted workflows (for
-example, in double machine learning), where each observation must be predicted
-using a model that did not train on that observation.
+indexed by \code{fold_id}. This supports cross-fitted workflows, where each
+observation must be predicted using a model that did not train on that
+observation.
 }
 \examples{
 set.seed(1)
@@ -105,16 +135,14 @@ fit <- dsldensify(
   refit_dsl_full_data = TRUE
 )
 
-# Full-data prediction
 A_new <- c(0, 0)
 W_new <- data.frame(x1 = c(0, 1), x2 = c(0, 0))
 predict(fit, A = A_new, W = W_new, type = "full")
 
-# Cross-validated prediction (requires fold_id)
 fold_id <- fit$id_fold
 predict(fit, A = A, W = W, type = "cv", fold_id = fold_id)
 
 }
 \seealso{
-\code{\link{dsldensify}}
+\code{\link{dsldensify}} \code{\link{rsample.dsldensify}}
 }

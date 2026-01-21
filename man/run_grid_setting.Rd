@@ -12,9 +12,11 @@ run_grid_setting(
   wts,
   cv_folds_id,
   id_fold,
+  ids_full = NULL,
   learners,
   return_fits = TRUE,
   return_density = FALSE,
+  eps = 1e-15,
   ...
 )
 }

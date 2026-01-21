@@ -132,7 +132,7 @@
 #' )
 #'
 #' @export
-make_gamlss_runner <- function(
+make_gamlss_direct_runner <- function(
   mu_rhs_list,
   family_list = c("NO"),
   sigma_rhs_list = c("1"),
@@ -291,7 +291,7 @@ make_gamlss_runner <- function(
   list(
     method = "gamlss",
     tune_grid = tune_grid,
-
+    positive_support = FALSE, 
     fit = function(train_set, ...) {
       has_wts <- use_weights_col && ("wts" %in% names(train_set))
       wts_vec <- if (has_wts) train_set$wts else NULL

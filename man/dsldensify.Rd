@@ -7,8 +7,10 @@
 dsldensify(
   A,
   W,
-  hazard_learners,
-  direct_learners,
+  hazard_learners = NULL,
+  direct_learners = NULL,
+  hurdle_learners = NULL,
+  hurdle_point = 0,
   wts = rep(1, length(A)),
   grid_type = c("equal_range", "equal_mass"),
   n_bins = round(c(0.5, 1, 1.5, 2) * sqrt(length(A))),
@@ -24,48 +26,91 @@ dsldensify(
 \item{W}{Covariates used to condition the density. May be a vector, matrix,
 \code{data.frame}, or \code{data.table}.}
 
-\item{hazard_learners}{Named list of hazard-based runner objects. Each runner
-must support fitting on long-format hazard data and prediction of hazards.}
+\item{hazard_learners}{Named list of hazard-based runner objects for density
+estimation. Each runner must support fitting on long-format hazard data and
+evaluation of per-bin hazards. In hurdle mode, these are treated as
+positive-part candidates and are fit only on observations with
+\code{A != hurdle_point}. All positive-part candidates must set
+\code{runner$positive_support = TRUE}.}
 
 \item{direct_learners}{Named list of direct conditional density runner objects.
 Each runner must support fitting on wide data and evaluation of the
-conditional log-density.}
+conditional log-density. In hurdle mode, these are treated as
+positive-part candidates and are fit only on observations with
+\code{A != hurdle_point}. All positive-part candidates must set
+\code{runner$positive_support = TRUE}.}
+
+\item{hurdle_learners}{Optional named list of hurdle (point-mass) runner
+objects. Supplying a non-empty \code{hurdle_learners} list enables hurdle
+mode. Each hurdle runner is a binary regression learner fit on wide data
+with outcome \code{in_hurdle = as.integer(A == hurdle_point)} and covariates
+\code{W}, and must support evaluation of the log-probability
+\eqn{\log \hat\pi(W)} used by \code{summarize_and_select_hurdle()}.}
+
+\item{hurdle_point}{Numeric scalar giving the location of the point mass in
+hurdle mode. Default is \code{0}. In hurdle mode, the positive-part density
+is estimated on \code{A != hurdle_point}.}
 
 \item{wts}{Optional numeric vector of length \code{n} giving observation
-weights.}
+weights. Weights are passed through to both hurdle and positive-part
+learners when supported by the runners.}
 
 \item{grid_type}{Character vector specifying binning strategies for hazard
-learners. Allowed values are \code{"equal_range"} and \code{"equal_mass"}.}
+learners. Allowed values are \code{"equal_range"} and \code{"equal_mass"}.
+In hurdle mode, this grid applies to the positive-part hazard learners only
+(fit on \code{A != hurdle_point}).}
 
 \item{n_bins}{Integer vector giving numbers of bins to consider for hazard
-learners.}
+learners. In hurdle mode, this grid applies to the positive-part hazard
+learners only (fit on \code{A != hurdle_point}).}
 
 \item{cv_folds}{Either a single integer specifying the number of v-folds, or a
 fold object returned by \code{origami::make_folds()}.}
 
 \item{return_cv_fits}{Logical; whether to retain fold-specific fits for the
-selected learner.}
+selected learner(s). In non-hurdle mode, fold-specific fits are retained for
+the selected density learner. In hurdle mode, fold-specific fits may be
+retained for both the selected positive-part learner and the selected hurdle
+learner.}
 
-\item{refit_dsl_full_data}{Logical; whether to refit the selected learner on
-the full dataset after selection.}
+\item{refit_dsl_full_data}{Logical; whether to refit the selected learner(s) on
+the full dataset after selection. In non-hurdle mode, the selected density
+learner is refit on all observations. In hurdle mode, the selected hurdle
+learner is refit on all observations (binary outcome \code{in_hurdle}), and
+the selected positive-part learner is refit on the subset
+\code{A != hurdle_point}.}
 
 \item{...}{Additional arguments passed to internal fitting routines and to
 learner-specific runner methods.}
 }
 \value{
 An object of class \code{"dsldensify"} containing the selected learner,
-  tuning parameters, cross-validation summaries, and fitted models.
+  tuning parameters, cross-validation summaries, and fitted models. In hurdle
+  mode, the returned object additionally stores the selected hurdle learner,
+  its tuning choice, and the fitted hurdle component used by
+  \code{predict.dsldensify()} and \code{rsample.dsldensify()}.
 }
 \description{
 Fits and selects among candidate conditional density estimators for a
 continuous outcome \code{A} given covariates \code{W}, using cross-validated
 negative log-density risk. Candidate estimators may include hazard-based
-(discretized) density learners and direct conditional density learners.
+(discretized) density learners, direct conditional density learners, and
+(optionally) hurdle model components.
 }
 \details{
 Hazard-based learners approximate the conditional density by discretizing the
 support of \code{A} and modeling discrete-time hazards. Direct learners model
 the conditional density of \code{A | W} without discretization.
+
+When \code{hurdle_learners} are supplied, \code{dsldensify()} fits a hurdle
+density model with a point mass at \code{hurdle_point} and a positive-part
+density for \code{A != hurdle_point}. In hurdle mode, the function performs:
+(i) cross-validated selection of a binary learner for
+\eqn{\pi(W) = P(A = \mathrm{hurdle\_point} \mid W)}, and (ii) cross-validated
+selection of a positive-part density learner among \code{hazard_learners} and
+\code{direct_learners} fit on the subset \code{A != hurdle_point}. The final
+selected hurdle model combines these two components into a valid conditional
+density for \code{A}.
 
 
 Hazard-based density estimation relies on the identity
@@ -78,8 +123,19 @@ where \eqn{\lambda_j(w)} is the discrete hazard of \eqn{A} falling in bin
 hazard with flexible binary regression learners and combining bins via the
 above factorization, one obtains a valid conditional density estimator.
 
+In hurdle mode, the conditional distribution of \code{A} is modeled as a
+two-part mixture:
+\deqn{
+  P(A = a \mid W = w) =
+  \pi(w)\,\mathbb{I}\{a = a_0\} +
+  \left\{1 - \pi(w)\right\} f_+(a \mid w)\,\mathbb{I}\{a \ne a_0\},
+}
+where \eqn{a_0} is \code{hurdle_point}, \eqn{\pi(w) = P(A = a_0 \mid W = w)} is
+estimated by the selected \code{hurdle_learners} candidate, and
+\eqn{f_+(a \mid w)} is a positive-support density estimated by the selected
+hazard-based or direct density candidate fit on \code{A != hurdle_point}.
 Cross-validated negative log-likelihood provides a proper scoring rule for
-comparing both hazard-based and direct density learners on equal footing.
+comparing candidates and selecting a joint hurdle model.
 }
 \examples{
 set.seed(1)
@@ -91,7 +147,6 @@ W <- data.frame(
 )
 A <- 0.5 * W$x1 - 0.3 * W$x2 + rnorm(n)
 
-# Simple Gaussian direct density learner
 gaussian_runner <- make_gaussian_homosked_runner(
   rhs_list = "~ x1 + x2"
 )
@@ -104,12 +159,11 @@ fit <- dsldensify(
   cv_folds = 3
 )
 
-# Predict conditional density at new covariate values
 new_W <- data.frame(x1 = c(0, 1), x2 = c(0, 0))
 dens <- predict(fit, A = c(0, 0), W = new_W)
 dens
 
 }
 \seealso{
-\code{\link{predict.dsldensify}}
+\code{\link{predict.dsldensify}} \code{\link{rsample.dsldensify}}
 }

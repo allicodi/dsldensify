@@ -44,7 +44,7 @@
 #' }
 #'
 #' @export
-make_gaussian_homosked_runner <- function(
+make_gaussian_homosced_direct_runner <- function(
   rhs_list,
   use_weights_col = TRUE,
   strip_fit = TRUE
@@ -88,7 +88,8 @@ make_gaussian_homosked_runner <- function(
   list(
     method = "gaussian_homosked",
     tune_grid = tune_grid,
-
+    positive_support = FALSE,
+    
     fit = function(train_set, ...) {
       has_wts <- use_weights_col && ("wts" %in% names(train_set))
       wts_vec <- if (has_wts) train_set$wts else NULL
