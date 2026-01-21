@@ -89,6 +89,17 @@ For the time being, only parametric quantile regression is supported.
 
 ---
 
+## Hurdle Models
+
+Hurdle models combine a point-mass learner for \(\pi(W) = P(A = 0 \mid W)\) with a positive-part density for \(A > 0\). The conditional distribution of $A$ is modeled as a two-part mixture:
+\[
+f(A = a \mid W = w) =   \pi(w)\,\mathbb{I}\{a = a_0\} +   \left\{1 - \pi(w)\right\} f_+(a \mid w)\,\mathbb{I}\{a \ne a_0\} \ .
+\]
+
+If hurdle learners are specified for $\pi$, the function then uses the supplied direct and/or hazard learners for the positive-part density estimation. Direct density learners inputted in this way should respect the requirement for positive bounds.
+
+---
+
 ## Installation
 
 The development version of `dsldensify` can be installed from GitHub:
@@ -200,9 +211,41 @@ Cross-validated prediction is also supported (e.g., for DML/TMLE workflows); see
 
 ---
 
+## Sampling from the fitted conditional density
+
+In addition to evaluating densities, `dsldensify` can generate draws from the fitted conditional distribution \(\hat f(\cdot \mid W)\). 
+
+```{r}
+# draw 5 samples of A for each row of W_grid
+A_samp <- rsample(fit, W = W_grid, n_samp = 5, type = "full", seed = 123)
+
+A_samp
+```
+
+A quick sanity check is to compare the sampled values to the fitted conditional density curve at the same covariate profile.
+
+```{r example-sample, out.width = "80%", fig.alt = ""}
+# overlay samples on the fitted conditional density for W_new = (0, 0)
+W_new <- data.table(x1 = 0, x2 = 0)
+A_samp0 <- rsample(fit, W = W_new, n_samp = 2000, type = "full", seed = 1)
+
+hist(
+  A_samp0[1, ], freq = FALSE, breaks = 30, col = "gray", border = "white",
+  main = "Samples from estimated density + fitted density curve"
+)
+
+plot(
+  fit, W_new, mode = "conditional", add = TRUE, plot_args = list(lwd = 2)
+)
+```
+
+Cross-validated sampling is also supported; see the function documentation for details.
+
+---
+
 ## Hurdle model example
 
-Hurdle models combine a point-mass learner for \(P(A = 0 \mid W)\) with a positive-part density for \(A > 0\).
+In this example, we illustrate a simple hurdle model.
 
 ```{r example-hurdle-fit}
 set.seed(2)
@@ -250,8 +293,8 @@ plot(
   fit_hurdle,
   W_h_grid,
   mode = "conditional",
-  component = "combined",
-  main = "Hurdle model (point mass + density)"
+  component = "hurdle",
+  main = "Hurdle model"
 )
 plot(
   fit_hurdle,
@@ -260,40 +303,7 @@ plot(
   component = "positive",
   main = "Positive-part density"
 )
-par(op)
 ```
-
----
-
-## Sampling from the fitted conditional density
-
-In addition to evaluating densities, `dsldensify` can generate draws from the fitted conditional distribution \(\hat f(\cdot \mid W)\). 
-
-```{r}
-# draw 5 samples of A for each row of W_grid
-A_samp <- rsample(fit, W = W_grid, n_samp = 5, type = "full", seed = 123)
-
-A_samp
-```
-
-A quick sanity check is to compare the sampled values to the fitted conditional density curve at the same covariate profile.
-
-```{r example-sample, out.width = "80%", fig.alt = ""}
-# overlay samples on the fitted conditional density for W_new = (0, 0)
-W_new <- data.table(x1 = 0, x2 = 0)
-A_samp0 <- rsample(fit, W = W_new, n_samp = 2000, type = "full", seed = 1)
-
-hist(
-  A_samp0[1, ], freq = FALSE, breaks = 30, col = "gray", border = "white",
-  main = "Samples from estimated density + fitted density curve"
-)
-
-plot(
-  fit, W_new, mode = "conditional", add = TRUE, plot_args = list(lwd = 2)
-)
-```
-
-Cross-validated sampling is also supported; see the function documentation for details.
 
 ---
 
@@ -322,7 +332,7 @@ All estimators in `dsldensify` are implemented as **runners**: adapters that exp
 | Mixture of location–scale residual KDE experts           | `make_mix_locscale_kde_direct_runner()`  |
 | Quantile-function–based density (quantile regression)    | `make_quantreg_direct_runner()`          |
 
-### Positive-part learners (`_pos`)
+### Positive-part learners
 
 | Learner                                       | Runner function                        |
 | --------------------------------------------- | -------------------------------------- |

@@ -2,7 +2,7 @@
 % Please edit documentation in R/runner_hurdle_glmnet.R
 \name{make_glmnet_hurdle_runner}
 \alias{make_glmnet_hurdle_runner}
-\title{Create a glmnet runner for hurdle probability pi(W) = P(in_hurdle=1 | W)}
+\title{Create a glmnet runner for hurdle probability modeling}
 \usage{
 make_glmnet_hurdle_runner(
   rhs_list,
@@ -15,18 +15,83 @@ make_glmnet_hurdle_runner(
   ...
 )
 }
+\arguments{
+\item{rhs_list}{A list of RHS specifications, either as one-sided formulas
+(for example, ~ W1 + W2) or as character strings (for example, "W1 + W2").}
+
+\item{alpha_grid}{Numeric vector of elastic net mixing parameters.}
+
+\item{lambda_grid}{Numeric vector of regularization strengths (must be
+strictly positive, length >= 2).}
+
+\item{use_weights_col}{Logical. If TRUE and the training data contain a
+column named wts, it is passed as case weights to glmnet::glmnet().}
+
+\item{standardize}{Logical. Passed to glmnet::glmnet() to standardize
+predictors.}
+
+\item{intercept}{Logical. Passed to glmnet::glmnet() to include an intercept.}
+
+\item{strip_fit}{Logical. If TRUE, optionally strip large objects from fits.}
+
+\item{...}{Additional arguments forwarded to glmnet::glmnet().}
+}
+\value{
+A named list (runner) with the following elements:
+  method: Character string "hurdle_glmnet".
+  tune_grid: Data frame describing the tuning grid, including .tune, rhs,
+    alpha, and lambda.
+  fit: Function fit(train_set, ...) returning a fit bundle.
+  fit_one: Function fit_one(train_set, tune, ...) fitting only the selected
+    tuning index.
+  logpi: Function logpi(fit_bundle, newdata, ...) returning log probabilities.
+  log_density: Function log_density(fit_bundle, newdata, ...) returning
+    Bernoulli negative log-likelihoods.
+  sample: Function sample(fit_bundle, newdata, n_samp, ...) drawing hurdle
+    indicators (assumes K = 1).
+
+Data requirements
+
+The runner expects train_set and newdata as wide data containing:
+  - a binary outcome column in_hurdle,
+  - covariates referenced in rhs_list,
+  - an optional weight column wts.
+}
 \description{
-Fits penalized logistic regression models via glmnet::glmnet() on wide data
-with binary outcome in_hurdle.
+Constructs a runner (learner adapter) for modeling the hurdle probability
+\eqn{\pi(W) = P(A = a_0 \mid W)} using penalized logistic regression via
+glmnet::glmnet(). The runner is compatible with the hurdle workflow in
+dsldensify, where the hurdle component is fit on wide data with binary
+outcome \code{in_hurdle}.
 }
 \details{
-Tuning grid:
-  - rhs_list (RHS varies slowest)
-  - alpha_grid
-  - lambda_grid (varies fastest)
+Tuning grid
 
-Design matrix handling:
-  - Assumes numeric predictors only (no factors upstream).
-  - Uses model.matrix() and stores per-RHS terms + x_cols.
-  - Aligns Xnew columns to training x_cols by name; missing cols filled with 0.
+Tuning is performed over a grid defined by:
+  - rhs_list (RHS varies slowest),
+  - alpha_grid,
+  - lambda_grid (varies fastest).
+
+Design matrix handling
+
+Predictors are expanded using model.matrix() for each RHS. The runner stores
+per-RHS design specifications and aligns newdata columns to the training
+design by name, filling missing columns with zeros. This runner assumes
+numeric predictors only (no factor handling is performed).
+
+Numeric-only requirement
+
+This runner is intended for use with numeric predictors only. All columns
+referenced in rhs_list must already be numeric. Factors, characters, and
+ordered factors are not supported and are not coerced internally.
+}
+\examples{
+rhs_list <- list(~ W1 + W2)
+
+runner <- make_glmnet_hurdle_runner(
+  rhs_list = rhs_list,
+  alpha_grid = c(0, 1),
+  lambda_grid = exp(seq(log(1e-4), log(1), length.out = 10))
+)
+
 }

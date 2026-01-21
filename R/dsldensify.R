@@ -147,8 +147,8 @@ utils::globalVariables(c("in_bin", "bin_id"))
 
 dsldensify <- function(
   A, W,
-  hazard_learners,
-  direct_learners,
+  hazard_learners = NULL,
+  direct_learners = NULL,
   hurdle_learners = NULL,
   hurdle_point = 0,
   wts = rep(1, length(A)),
@@ -314,6 +314,7 @@ dsldensify <- function(
     out <- list(
       call = match.call(),
       is_hurdle = FALSE, 
+      A_range = c(min(A), max(A)),
 
       # selection summaries + winner
       select_summary = select_summary,
@@ -575,7 +576,7 @@ dsldensify <- function(
       call = match.call(),
       is_hurdle = TRUE,
       hurdle_point = hurdle_point,
-      A_range = c(min(A), max(A)),
+      A_range = c(min(A[A != hurdle_point]), max(A[A != hurdle_point])),
 
       # selection summaries + winner (JOINT best row)
       select_summary = select_summary,
