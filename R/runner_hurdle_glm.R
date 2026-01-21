@@ -1,3 +1,67 @@
+#' Create a GLM runner for hurdle probability modeling
+#'
+#' Constructs a runner (learner adapter) for modeling the hurdle probability
+#' \eqn{\pi(W) = P(A = a_0 \mid W)} using logistic regression via
+#' stats::glm(). The runner is compatible with the hurdle workflow in
+#' dsldensify, where the hurdle component is fit on wide data with binary
+#' outcome \code{in_hurdle}.
+#'
+#' Tuning is performed over a list of RHS model specifications (rhs_list);
+#' exactly one model is fit per RHS. Each fitted model estimates
+#' \eqn{P(in\_hurdle = 1 \mid W)} using a binomial likelihood.
+#'
+#' Numeric-only requirement
+#'
+#' This runner is intended for use with numeric predictors only. All columns
+#' referenced in rhs_list must already be numeric. Factors, characters, and
+#' ordered factors are not supported and are not coerced internally.
+#'
+#' Tuning grid and prediction layout
+#'
+#' The runner constructs a tune_grid with one row per RHS specification and
+#' columns .tune and rhs. During cross-validation, logpi() and log_density()
+#' return n x K matrices with columns aligned to the ordering of tune_grid.
+#'
+#' @param rhs_list A list of RHS specifications, either as one-sided formulas
+#'   (for example, ~ W1 + W2) or as character strings (for example, "W1 + W2").
+#'
+#' @param use_weights_col Logical. If TRUE and the training data contain a
+#'   column named wts, it is passed as case weights to stats::glm().
+#'
+#' @param strip_fit Logical. If TRUE (default), store a lightweight
+#'   representation of each fitted model sufficient for prediction.
+#'
+#' @param ... Additional arguments forwarded to stats::glm().
+#'
+#' @return A named list (runner) with the following elements:
+#'   method: Character string "hurdle_glm".
+#'   tune_grid: Data frame describing the tuning grid, including .tune and rhs.
+#'   fit: Function fit(train_set, ...) returning a fit bundle.
+#'   fit_one: Function fit_one(train_set, tune, ...) fitting only the selected
+#'     tuning index.
+#'   logpi: Function logpi(fit_bundle, newdata, ...) returning log probabilities.
+#'   log_density: Function log_density(fit_bundle, newdata, ...) returning
+#'     Bernoulli negative log-likelihoods.
+#'   sample: Function sample(fit_bundle, newdata, n_samp, ...) drawing hurdle
+#'     indicators (assumes K = 1).
+#'
+#' Data requirements
+#'
+#' The runner expects train_set and newdata as wide data containing:
+#'   - a binary outcome column in_hurdle,
+#'   - covariates referenced in rhs_list,
+#'   - an optional weight column wts.
+#'
+#' @examples
+#' rhs_list <- list(~ W1 + W2)
+#'
+#' runner <- make_glm_hurdle_runner(
+#'   rhs_list = rhs_list,
+#'   use_weights_col = TRUE,
+#'   strip_fit = TRUE
+#' )
+#'
+#' @export
 make_glm_hurdle_runner <- function(
   rhs_list,
   use_weights_col = TRUE,
