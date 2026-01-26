@@ -217,9 +217,6 @@ make_gamma_glm_log_pos_runner <- function(
       if (length(fits) != 1L) stop("sample() assumes K=1: fit_bundle$fits must have length 1 (selected model).")
 
       nd <- as.data.frame(newdata)
-      if (!("A" %in% names(nd))) stop("newdata must contain column 'A'.")
-      check_pos_A(nd$A, where = "newdata")
-
       pars <- predict_params(fits, nd, ...)
       mu <- pars$mu[, 1]
       phi <- pars$phi[1]

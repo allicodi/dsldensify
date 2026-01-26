@@ -189,10 +189,6 @@ make_lognormal_homosced_pos_runner <- function(
       if (length(fits) != 1L) stop("sample() assumes K=1: fit_bundle$fits must have length 1 (selected model).")
 
       nd <- as.data.frame(newdata)
-      if (!("A" %in% names(nd))) stop("newdata must contain column 'A'.")
-      # For sampling, A isn't used, but we keep the interface consistent; require finite if present.
-      if (any(!is.finite(nd$A))) stop("Non-finite values in A.")
-
       obj <- fits[[1]]
 
       mu <- stats::predict(obj$fit, newdata = nd, ...)
