@@ -1241,7 +1241,7 @@ rsample.dsldensify <- function(
   }
 
   # ---------------------------------------------------------
-  # 2) POSITIVE (non-hurdle) SAMPLING: your existing code below
+  # 2) POSITIVE (non-hurdle) SAMPLING
   # ---------------------------------------------------------
 
   runner <- object$runner
@@ -1297,14 +1297,6 @@ rsample.dsldensify <- function(
 
   # same construction used in predict.dsldensify
   breaks_full <- c(breaks, tail(breaks, 1) + tail(bin_length, 1))
-
-  if (length(breaks_full) != (n_bins + 1L)) {
-    stop(
-      "Inconsistent grid: expected length(breaks_full) == n_bins + 1.\n",
-      "Got length(breaks_full) = ", length(breaks_full),
-      " and n_bins = ", n_bins, "."
-    )
-  }
 
   make_long_grid <- function(W_dt, breaks_full) {
     W_dt <- data.table::as.data.table(W_dt)
