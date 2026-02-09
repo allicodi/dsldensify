@@ -597,7 +597,7 @@ print.dsldensify <- function(x, ...) {
   if (!is.null(x$select_summary) && !is.null(x$select_summary$best) &&
       "cv_risk" %in% names(x$select_summary$best)) {
     cat("\n")
-    cat(paste0(length(fit$cv_folds_id), "-fold CV risk:    ", fmt_num(x$select_summary$best$cv_risk, 6L), "\n", sep = ""))
+    cat(paste0(length(x$cv_folds_id), "-fold CV risk:    ", fmt_num(x$select_summary$best$cv_risk, 6L), "\n", sep = ""))
   }
 
   invisible(x)
