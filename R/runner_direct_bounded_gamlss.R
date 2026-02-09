@@ -192,21 +192,22 @@ make_bounded_gamlss_direct_runner <- function(
 
   build_design_train_glm <- function(mu_rhs_raw, dat) {
     rhs <- normalize_rhs(mu_rhs_raw)
-    f <- stats::as.formula(paste0("A_unit ~ ", rhs))
+    f <- stats::as.formula(paste0("~ ", rhs))   # <-- no response
     tt <- stats::terms(f, data = dat)
     X <- stats::model.matrix(tt, data = dat)
     list(X = X, terms = tt, x_cols = colnames(X), rhs = rhs)
   }
 
   build_design_new_glm <- function(design_spec, newdata) {
-    f <- stats::as.formula(paste0("A_unit ~ ", design_spec$rhs))
+    f <- stats::as.formula(paste0("~ ", design_spec$rhs))  # <-- no response
     tt <- stats::terms(f, data = newdata)
     Xn <- stats::model.matrix(tt, data = newdata)
 
     x_cols <- design_spec$x_cols
     missing <- setdiff(x_cols, colnames(Xn))
     if (length(missing)) {
-      Xn <- cbind(Xn, matrix(0, nrow(Xn), length(missing), dimnames = list(NULL, missing)))
+      Xn <- cbind(Xn, matrix(0, nrow(Xn), length(missing),
+                             dimnames = list(NULL, missing)))
     }
     Xn <- Xn[, x_cols, drop = FALSE]
     Xn
