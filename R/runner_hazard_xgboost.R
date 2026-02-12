@@ -384,26 +384,41 @@ make_xgboost_runner <- function(
       params = params,
       data = dtrain,
       nrounds = as.integer(nrounds_max),
-      watchlist = if (use_es) watch else NULL,
+      evals = if (use_es) watch else NULL,
       early_stopping_rounds = if (use_es) as.integer(early_stopping_rounds) else NULL,
       maximize = FALSE,
       verbose = verbose
     )
 
-    best_iter <- if (!is.null(fit$best_iteration) && is.finite(fit$best_iteration)) {
-      as.integer(fit$best_iteration)
-    } else {
-      as.integer(nrounds_max)
+    num_rounds <- xgboost::xgb.get.num.boosted.rounds(fit)
+
+    best_iter <- NA_integer_
+
+    # If early stopping was used, try to retrieve best_iteration robustly.
+    # Note: xgb.attr() best_iteration is documented as 0-based; R attribute is base-1.
+    if (use_es) {
+      bi <- suppressWarnings(as.integer(xgboost::xgb.attr(fit, "best_iteration")))
+      if (!is.na(bi)) {
+        best_iter <- bi + 1L
+      } else {
+        bi2 <- suppressWarnings(as.integer(attr(fit, "best_iteration")))
+        if (!is.na(bi2)) best_iter <- bi2
+      }
     }
+    # cap to what the model actually contains
+    if (!is.na(best_iter)) best_iter <- min(best_iter, num_rounds)
+    # If we still don't have a usable best_iter, just use the full model
+    if (is.na(best_iter) || best_iter < 1L) best_iter <- NA_integer_
+
 
     # ---- strip: refit to best_iter to drop unnecessary trees ----
-    if (strip_fit && strip_method == "best_iter_refit" && use_es && best_iter < as.integer(nrounds_max)) {
+    if (strip_fit && strip_method == "best_iter_refit" && use_es && !is.na(best_iter) && best_iter < as.integer(nrounds_max)) {
       # refit exactly best_iter (no watchlist / no early stopping) => smaller model
       fit <- xgboost::xgb.train(
         params = params,
         data = dtrain,
         nrounds = best_iter,
-        watchlist = NULL,
+        evals = NULL,
         maximize = FALSE,
         verbose = 0
       )
@@ -437,6 +452,8 @@ make_xgboost_runner <- function(
         p <- predict(fits[[k]]$model, dnew)
       } else {
         it <- as.integer(fits[[k]]$best_iter)
+        nr <- xgboost::xgb.get.num.boosted.rounds(fits[[k]]$model)
+        it <- max(1L, min(it, nr))
         p <- predict(fits[[k]]$model, dnew, iterationrange = c(1L, it))
       }
 
@@ -482,24 +499,39 @@ make_xgboost_runner <- function(
             params = params,
             data = dtrain,
             nrounds = as.integer(nrounds_max),
-            watchlist = if (use_es_rhs) list(train = dtrain, eval = dvalid) else NULL,
+            evals = if (use_es_rhs) list(train = dtrain, eval = dvalid) else NULL,
             early_stopping_rounds = if (use_es_rhs) as.integer(early_stopping_rounds) else NULL,
             maximize = FALSE,
             verbose = verbose
           )
 
-          best_iter <- if (!is.null(fit$best_iteration) && is.finite(fit$best_iteration)) {
-            as.integer(fit$best_iteration)
-          } else {
-            as.integer(nrounds_max)
-          }
+          num_rounds <- xgboost::xgb.get.num.boosted.rounds(fit)
 
-          if (strip_fit && strip_method == "best_iter_refit" && use_es_rhs && best_iter < as.integer(nrounds_max)) {
+          best_iter <- NA_integer_
+
+          # If early stopping was used, try to retrieve best_iteration robustly.
+          # Note: xgb.attr() best_iteration is documented as 0-based; R attribute is base-1.
+          if (use_es_rhs) {
+            bi <- suppressWarnings(as.integer(xgboost::xgb.attr(fit, "best_iteration")))
+            if (!is.na(bi)) {
+              best_iter <- bi + 1L
+            } else {
+              bi2 <- suppressWarnings(as.integer(attr(fit, "best_iteration")))
+              if (!is.na(bi2)) best_iter <- bi2
+            }
+          }
+          # cap to what the model actually contains
+          if (!is.na(best_iter)) best_iter <- min(best_iter, num_rounds)
+          # If we still don't have a usable best_iter, just use the full model
+          if (is.na(best_iter) || best_iter < 1L) best_iter <- NA_integer_
+
+
+          if (strip_fit && strip_method == "best_iter_refit" && use_es_rhs && !is.na(best_iter) && best_iter < num_rounds) {
             fit <- xgboost::xgb.train(
               params = params,
               data = dtrain,
               nrounds = best_iter,
-              watchlist = NULL,
+              evals = NULL,
               maximize = FALSE,
               verbose = 0
             )

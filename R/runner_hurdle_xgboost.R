@@ -286,25 +286,36 @@ make_xgboost_hurdle_runner <- function(
       params = params,
       data = dtrain,
       nrounds = as.integer(nrounds_max),
-      watchlist = if (use_es) list(train = dtrain, eval = dvalid) else NULL,
+      evals = if (use_es) list(train = dtrain, eval = dvalid) else NULL,
       early_stopping_rounds = if (use_es) as.integer(early_stopping_rounds) else NULL,
       maximize = FALSE,
       verbose = as.integer(verbose)
     )
 
-    best_iter <- if (!is.null(bst$best_iteration) && is.finite(bst$best_iteration)) {
-      as.integer(bst$best_iteration)
-    } else {
-      as.integer(nrounds_max)
-    }
+    nr <- xgboost::xgb.get.num.boosted.rounds(bst)
 
-    # strip by refitting to best_iter (mirrors hazard runner behavior)
-    if (isTRUE(strip_fit) && strip_method == "best_iter_refit" && use_es && best_iter < as.integer(nrounds_max)) {
+    best_iter <- NA_integer_
+    if (use_es) {
+      bi <- suppressWarnings(as.integer(xgboost::xgb.attr(bst, "best_iteration")))
+      if (!is.na(bi)) {
+        best_iter <- bi + 1L
+      } else {
+        bi2 <- suppressWarnings(as.integer(attr(bst, "best_iteration")))
+        if (!is.na(bi2)) best_iter <- bi2
+      }
+    }
+    if (!is.na(best_iter)) best_iter <- min(best_iter, nr)
+    if (is.na(best_iter) || best_iter < 1L) best_iter <- NA_integer_
+    if (isTRUE(strip_fit) &&
+        identical(strip_method, "best_iter_refit") &&
+        isTRUE(use_es) &&
+        !is.na(best_iter) &&
+        best_iter < nr) {    
       bst <- xgboost::xgb.train(
         params = params,
         data = dtrain,
         nrounds = best_iter,
-        watchlist = NULL,
+        evals = NULL,
         maximize = FALSE,
         verbose = 0L
       )
@@ -337,6 +348,8 @@ make_xgboost_hurdle_runner <- function(
         p <- predict(fits[[k]]$model, dnew)
       } else {
         it <- as.integer(fits[[k]]$best_iter)
+        nr <- xgboost::xgb.get.num.boosted.rounds(fits[[k]]$model)
+        it <- max(1L, min(it, nr))
         p <- predict(fits[[k]]$model, dnew, iterationrange = c(1L, it))
       }
 
