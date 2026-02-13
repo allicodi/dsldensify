@@ -188,6 +188,7 @@ make_glm_hazard_runner <- function(
   }
 
   compute_spline_specs <- function(rhs, train_set) {
+    
     f <- stats::as.formula(paste0("in_bin ~ ", rhs))
     rhs_expr <- f[[3L]]
     calls <- find_ns_calls(rhs_expr)
@@ -253,13 +254,24 @@ make_glm_hazard_runner <- function(
 
   build_design_train <- function(rhs_raw, train_set) {
     rhs <- normalize_rhs(rhs_raw)
-    f <- stats::as.formula(paste0("in_bin ~ ", rhs))
-
-    specs <- compute_spline_specs(rhs, train_set)
-
-    env <- make_ns_env(specs, parent_env = environment(f))
-    environment(f) <- env
-
+    
+    if(length(unique(train_set$bin_id)) == 1){
+      # Edge case where bin_id is constant. Skip compute_spline_specs
+      level_of_constant_bin_id <- train_set$bin_id[1]
+      f <- stats::as.formula(paste0("in_bin ~ -1 + I(bin_id == ", level_of_constant_bin_id, ")"))
+      
+      specs <- NULL
+      skip_bin_spline <- TRUE
+    } else{
+      # Regular case
+      f <- stats::as.formula(paste0("in_bin ~ ", rhs))
+      specs <- compute_spline_specs(rhs, train_set)
+      env <- make_ns_env(specs, parent_env = environment(f))
+      environment(f) <- env
+      
+      skip_bin_spline <- FALSE
+    }
+  
     tt_full <- stats::terms(f, data = train_set)
     tt_x    <- stats::delete.response(tt_full)
 
@@ -269,16 +281,19 @@ make_glm_hazard_runner <- function(
     list(
       X = X,
       terms = tt_x,
-      design_spec = list(rhs = rhs, specs = specs, x_cols = colnames(X))
+      design_spec = list(rhs = rhs, specs = specs, x_cols = colnames(X), skip_bin_spline = skip_bin_spline)
     )
   }
 
   build_design_new <- function(design_spec, newdata) {
     f <- stats::as.formula(paste0("~ ", design_spec$rhs))
 
-    env <- make_ns_env(design_spec$specs, parent_env = environment(f))
-    environment(f) <- env
-
+    # run for most cases, only skips when edge case single bin_id in training fold
+    if(!design_spec$skip_bin_spline){
+      env <- make_ns_env(design_spec$specs, parent_env = environment(f))
+      environment(f) <- env
+    }
+    
     tt <- stats::terms(f, data = newdata)
     Xn <- stats::model.matrix(tt, data = newdata)
 
